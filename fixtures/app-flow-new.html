@@ -1,0 +1,303 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Rendered HTML Diff App Flow</title>
+  <style>
+    :root {
+      --bg: #f5f7fb;
+      --panel: #ffffff;
+      --ink: #1f2328;
+      --muted: #626c7a;
+      --line: #d5dce8;
+      --blue: #0969da;
+      --green: #2da44e;
+      --purple: #8250df;
+      --yellow: #9a6700;
+      --red: #cf222e;
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+
+    body {
+      margin: 0;
+      background: var(--bg);
+      color: var(--ink);
+      font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      line-height: 1.55;
+    }
+
+    main {
+      max-width: 1120px;
+      margin: 0 auto;
+      padding: 32px 24px 56px;
+    }
+
+    header {
+      border-bottom: 1px solid var(--line);
+      margin-bottom: 24px;
+      padding-bottom: 16px;
+    }
+
+    h1 {
+      margin: 0;
+      font-size: 30px;
+      letter-spacing: 0;
+    }
+
+    h2 {
+      margin: 28px 0 12px;
+      font-size: 20px;
+      letter-spacing: 0;
+    }
+
+    p,
+    li,
+    td,
+    th {
+      font-size: 15px;
+    }
+
+    code {
+      font-family: "SFMono-Regular", Consolas, "Liberation Mono", monospace;
+    }
+
+    .summary {
+      max-width: 860px;
+      color: var(--muted);
+    }
+
+    .graph-panel {
+      width: 100%;
+      margin: 0;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: var(--panel);
+      padding: 18px;
+      overflow-x: auto;
+    }
+
+    pre.graph-panel {
+      color: var(--muted);
+      font: 13px/1.5 "SFMono-Regular", Consolas, "Liberation Mono", monospace;
+      white-space: pre;
+    }
+
+    .graph-panel svg {
+      display: block;
+      width: 100%;
+      max-width: 100%;
+      height: auto;
+    }
+
+    .two-column {
+      display: grid;
+      grid-template-columns: minmax(0, 1.1fr) minmax(320px, 0.9fr);
+      gap: 18px;
+      align-items: start;
+    }
+
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      background: var(--panel);
+    }
+
+    th,
+    td {
+      border: 1px solid var(--line);
+      padding: 8px 10px;
+      text-align: left;
+      vertical-align: top;
+    }
+
+    th {
+      background: #eef2f7;
+    }
+
+    .legend {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 10px;
+      margin: 12px 0 0;
+      color: var(--muted);
+      font-size: 13px;
+    }
+
+    .legend span {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+    }
+
+    .swatch {
+      width: 14px;
+      height: 14px;
+      border-radius: 3px;
+      border: 1px solid currentColor;
+    }
+
+    @media (max-width: 800px) {
+      .two-column {
+        grid-template-columns: 1fr;
+      }
+    }
+  </style>
+</head>
+<body>
+  <main>
+    <header>
+      <h1 data-diff-key="title">Rendered HTML Diff App Flow</h1>
+      <p class="summary" data-diff-key="summary">This version uses Mermaid as the graph source so the app flow is easier to read, easier to maintain, and less dependent on hand-positioned SVG coordinates.</p>
+    </header>
+
+    <section data-diff-key="build-flow-section">
+      <h2 data-diff-key="build-flow-heading">Build-Time Flow</h2>
+      <pre class="mermaid graph-panel" data-diff-key="build-flow-graphic" data-diff-kind="graphic">
+flowchart LR
+  before["before.html&lt;br/&gt;old static document"]
+  after["after.html&lt;br/&gt;new static document"]
+  cli["CLI&lt;br/&gt;parse args and read files"]
+  sanitize["sanitizeHtml&lt;br/&gt;strip scripts and unsafe embeds"]
+  payload["report template&lt;br/&gt;embed both documents as JSON"]
+  output["diff.html&lt;br/&gt;portable standalone report"]
+
+  before --> cli
+  after --> cli
+  cli --> sanitize --> payload --> output
+
+  classDef file fill:#ddf4ff,stroke:#0969da,color:#24292f;
+  classDef tool fill:#f0f6ff,stroke:#548dff,color:#24292f;
+  classDef guard fill:#ffebe9,stroke:#cf222e,color:#24292f;
+  classDef report fill:#dafbe1,stroke:#2da44e,color:#24292f;
+  class before,after file;
+  class cli,payload tool;
+  class sanitize guard;
+  class output report;
+      </pre>
+      <p data-diff-key="build-flow-caption">At build time, no browser work happens. The CLI creates one self-contained report that carries the sanitized old and new documents inside the file.</p>
+    </section>
+
+    <section data-diff-key="runtime-flow-section">
+      <h2 data-diff-key="runtime-flow-heading">Browser Runtime Flow</h2>
+      <pre class="mermaid graph-panel" data-diff-key="runtime-flow-graphic" data-diff-kind="graphic">
+flowchart TB
+  load["Load diff.html&lt;br/&gt;read embedded JSON"]
+  iframe["Render after.html&lt;br/&gt;inside sandboxed iframe"]
+  oldDoc["Parse before.html&lt;br/&gt;off-screen DOM"]
+  afterBlocks["Collect after blocks&lt;br/&gt;headings, p, li, pre, tr, graphic"]
+  beforeBlocks["Collect before blocks&lt;br/&gt;same semantic model"]
+  match{"Same identity?"}
+  diff["Compute block diff&lt;br/&gt;added, modified, deleted"]
+  inline["Render details&lt;br/&gt;words, lines, table cells"]
+  overlay["Apply git-like colors&lt;br/&gt;green, yellow, red"]
+  sidebar["Build side panel&lt;br/&gt;changed blocks only"]
+  navClick["Click side item&lt;br/&gt;scroll to target"]
+
+  load --> iframe --> afterBlocks --> match
+  load --> oldDoc --> beforeBlocks --> match
+  match --> diff --> inline --> overlay
+  diff --> sidebar --> navClick --> overlay
+
+  classDef browser fill:#fff8c5,stroke:#9a6700,color:#24292f;
+  classDef model fill:#fbefff,stroke:#8250df,color:#24292f;
+  classDef output fill:#dafbe1,stroke:#2da44e,color:#24292f;
+  classDef decision fill:#ffffff,stroke:#57606a,color:#24292f;
+  class load,iframe,oldDoc,overlay,navClick browser;
+  class afterBlocks,beforeBlocks,diff,inline model;
+  class sidebar output;
+  class match decision;
+      </pre>
+      <p data-diff-key="runtime-flow-caption">At runtime, the new HTML is the visible surface. The old HTML is parsed beside it so the viewer can explain what changed without executing input scripts.</p>
+    </section>
+
+    <section data-diff-key="identity-flow-section">
+      <h2 data-diff-key="identity-flow-heading">Block Identity Ladder</h2>
+      <div class="two-column">
+        <pre class="mermaid graph-panel" data-diff-key="identity-flow-graphic" data-diff-kind="graphic">
+flowchart TB
+  block["Rendered block"]
+  key{"Has data-diff-key?"}
+  section{"Inside keyed section?"}
+  fingerprint["Fallback fingerprint&lt;br/&gt;tag + heading path + text"]
+  stable["key:id&lt;br/&gt;most reliable"]
+  local["section:id:index&lt;br/&gt;stable enough for simple reports"]
+  weak["fallback:id&lt;br/&gt;last resort"]
+
+  block --> key
+  key -- yes --> stable
+  key -- no --> section
+  section -- yes --> local
+  section -- no --> fingerprint --> weak
+
+  classDef source fill:#ddf4ff,stroke:#0969da,color:#24292f;
+  classDef decision fill:#ffffff,stroke:#57606a,color:#24292f;
+  classDef good fill:#dafbe1,stroke:#2da44e,color:#24292f;
+  classDef warning fill:#fff8c5,stroke:#9a6700,color:#24292f;
+  class block source;
+  class key,section decision;
+  class stable,local good;
+  class fingerprint,weak warning;
+        </pre>
+
+        <table data-diff-key="identity-table">
+          <thead>
+            <tr data-diff-key="identity-table-head">
+              <th>Identity source</th>
+              <th>Why it matters</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr data-diff-key="identity-key-row">
+              <td><code>data-diff-key</code></td>
+              <td>Best signal for agent-generated reports because the author controls it.</td>
+            </tr>
+            <tr data-diff-key="identity-section-row">
+              <td>section local order</td>
+              <td>Useful when children are stable but do not carry their own keys.</td>
+            </tr>
+            <tr data-diff-key="identity-fallback-row">
+              <td>text fingerprint</td>
+              <td>Useful as a last resort, but moves and rewrites can confuse it.</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
+
+    <section data-diff-key="lesson-flow-section">
+      <h2 data-diff-key="lesson-flow-heading">Why The Recent Bugs Happened</h2>
+      <pre class="mermaid graph-panel" data-diff-key="lesson-flow-graphic" data-diff-kind="graphic">
+flowchart LR
+  native["Viewer styles native nodes&lt;br/&gt;li, tr, pre"]
+  drift["Layout breaks&lt;br/&gt;markers drift and cells collapse"]
+  lists["List fix&lt;br/&gt;marker span + body span"]
+  columns["Stable list columns&lt;br/&gt;1, 2, 3 align"]
+
+  rows["Table row flattened&lt;br/&gt;invalid tr content"]
+  cells["Cell-level diff&lt;br/&gt;keep td and th"]
+  valid["Valid table layout&lt;br/&gt;highlight changed cells"]
+
+  native --> drift --> lists --> columns
+  rows --> cells --> valid
+
+  classDef bug fill:#ffebe9,stroke:#cf222e,color:#24292f;
+  classDef fix fill:#dafbe1,stroke:#2da44e,color:#24292f;
+  class native,drift,rows bug;
+  class lists,columns,cells,valid fix;
+      </pre>
+      <p data-diff-key="lesson-flow-caption">The viewer should add explainable overlays without changing the semantic shape of the rendered document. Lists and tables need special handling because their native layout rules are easy to disturb.</p>
+      <div class="legend" data-diff-key="legend">
+        <span><span class="swatch" style="background:#ddf4ff;color:var(--blue)"></span>input</span>
+        <span><span class="swatch" style="background:#f0f6ff;color:#548dff"></span>CLI work</span>
+        <span><span class="swatch" style="background:#fbefff;color:var(--purple)"></span>data model</span>
+        <span><span class="swatch" style="background:#dafbe1;color:var(--green)"></span>output or fix</span>
+        <span><span class="swatch" style="background:#ffebe9;color:var(--red)"></span>bug source</span>
+      </div>
+    </section>
+  </main>
+</body>
+</html>

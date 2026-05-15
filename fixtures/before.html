@@ -1,0 +1,147 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Agent Coding Report</title>
+  <style>
+    body {
+      margin: 0;
+      background: #f6f7f9;
+      color: #20242a;
+      font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      line-height: 1.55;
+    }
+
+    main {
+      max-width: 860px;
+      margin: 0 auto;
+      padding: 40px 28px 64px;
+    }
+
+    header {
+      border-bottom: 1px solid #d9dee7;
+      margin-bottom: 28px;
+      padding-bottom: 18px;
+    }
+
+    h1,
+    h2 {
+      line-height: 1.2;
+      letter-spacing: 0;
+    }
+
+    h1 {
+      margin: 0;
+      font-size: 30px;
+    }
+
+    h2 {
+      margin: 30px 0 10px;
+      font-size: 20px;
+    }
+
+    p,
+    li,
+    blockquote {
+      font-size: 15px;
+    }
+
+    code,
+    pre {
+      font-family: "SFMono-Regular", Consolas, "Liberation Mono", monospace;
+    }
+
+    pre {
+      overflow: auto;
+      border: 1px solid #d8dee8;
+      border-radius: 6px;
+      background: #111820;
+      color: #eef4fb;
+      padding: 14px;
+      font-size: 13px;
+    }
+
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      margin-top: 10px;
+      background: #ffffff;
+    }
+
+    th,
+    td {
+      border: 1px solid #d8dee8;
+      padding: 8px 10px;
+      text-align: left;
+    }
+
+    th {
+      background: #edf1f7;
+    }
+
+    blockquote {
+      margin: 12px 0;
+      border-left: 4px solid #c2cad8;
+      padding: 8px 14px;
+      background: #ffffff;
+      color: #4f5968;
+    }
+  </style>
+</head>
+<body>
+  <main>
+    <header>
+      <h1 data-diff-key="report-title">Workspace Cleanup Implementation</h1>
+      <p data-diff-key="summary">Implemented basic cleanup for temporary workspace folders after agent runs.</p>
+    </header>
+
+    <section data-diff-key="files-section">
+      <h2 data-diff-key="files-heading">Files Changed</h2>
+      <ul>
+        <li data-diff-key="file-cleanup">Updated <code>src/cleanup.ts</code> to remove generated folders.</li>
+        <li data-diff-key="file-index">Updated <code>src/index.ts</code> to call cleanup after completion.</li>
+      </ul>
+    </section>
+
+    <section data-diff-key="implementation-section">
+      <h2 data-diff-key="implementation-heading">Implementation Notes</h2>
+      <p data-diff-key="implementation-note">Cleanup runs after the report is written and ignores missing directories.</p>
+      <pre data-diff-key="cleanup-code"><code>export async function cleanupWorkspace(path: string) {
+  await rm(path, { recursive: true, force: true });
+}</code></pre>
+    </section>
+
+    <section data-diff-key="tests-section">
+      <h2 data-diff-key="tests-heading">Tests</h2>
+      <table>
+        <thead>
+          <tr data-diff-key="tests-table-head">
+            <th>Suite</th>
+            <th>Status</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr data-diff-key="tests-cleanup-row">
+            <td>cleanup</td>
+            <td>Not run yet</td>
+          </tr>
+        </tbody>
+      </table>
+    </section>
+
+    <section data-diff-key="risk-section">
+      <h2 data-diff-key="risk-heading">Risks</h2>
+      <blockquote data-diff-key="risk-note">Recursive cleanup still needs path validation before this is safe on Windows.</blockquote>
+    </section>
+
+    <section data-diff-key="next-section">
+      <h2 data-diff-key="next-heading">Next Steps</h2>
+      <ol>
+        <li data-diff-key="next-add-tests">Add path validation tests.</li>
+        <li data-diff-key="next-review-logs">Review cleanup logs for noisy messages.</li>
+      </ol>
+    </section>
+  </main>
+</body>
+</html>

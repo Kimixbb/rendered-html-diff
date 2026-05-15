@@ -1,0 +1,31 @@
+{
+  "name": "rendered-html-diff",
+  "version": "0.1.0",
+  "description": "A tiny CLI that renders a visual diff report for two static HTML documents.",
+  "type": "module",
+  "bin": {
+    "rendered-html-diff": "./dist/cli.js"
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test": "npm run build && node --test dist/__tests__/core.test.js",
+    "demo": "npm run build && node dist/cli.js fixtures/before.html fixtures/after.html --out dist/demo.html",
+    "flow-demo": "npm run build && node dist/cli.js fixtures/app-flow-old.html fixtures/app-flow-new.html --out dist/app-flow-demo.html",
+    "rhd": "npm run build && node dist/cli.js"
+  },
+  "keywords": [
+    "html",
+    "diff",
+    "visual-diff",
+    "static-html"
+  ],
+  "license": "MIT",
+  "devDependencies": {
+    "@types/node": "^24.0.0",
+    "typescript": "^5.8.0"
+  },
+  "dependencies": {
+    "mermaid": "^11.15.0"
+  }
+}

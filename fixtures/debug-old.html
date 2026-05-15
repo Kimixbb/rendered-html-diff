@@ -1,0 +1,172 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Viewer Debugging Report</title>
+  <style>
+    body {
+      margin: 0;
+      background: #f5f7fa;
+      color: #1f2328;
+      font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      line-height: 1.55;
+    }
+
+    main {
+      max-width: 920px;
+      margin: 0 auto;
+      padding: 38px 28px 68px;
+    }
+
+    header {
+      border-bottom: 1px solid #d8dee8;
+      margin-bottom: 26px;
+      padding-bottom: 16px;
+    }
+
+    h1,
+    h2 {
+      line-height: 1.2;
+      letter-spacing: 0;
+    }
+
+    h1 {
+      margin: 0;
+      font-size: 30px;
+    }
+
+    h2 {
+      margin: 30px 0 10px;
+      font-size: 20px;
+    }
+
+    p,
+    li,
+    blockquote,
+    td,
+    th {
+      font-size: 15px;
+    }
+
+    code,
+    pre {
+      font-family: "SFMono-Regular", Consolas, "Liberation Mono", monospace;
+    }
+
+    pre {
+      overflow: auto;
+      border: 1px solid #d8dee8;
+      border-radius: 6px;
+      background: #111820;
+      color: #eef4fb;
+      padding: 14px;
+      font-size: 13px;
+    }
+
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      margin-top: 10px;
+      background: #ffffff;
+    }
+
+    th,
+    td {
+      border: 1px solid #d8dee8;
+      padding: 8px 10px;
+      text-align: left;
+      vertical-align: top;
+    }
+
+    th {
+      background: #eef2f7;
+    }
+
+    blockquote {
+      margin: 12px 0;
+      border-left: 4px solid #c5cedb;
+      padding: 8px 14px;
+      background: #ffffff;
+      color: #4f5968;
+    }
+  </style>
+</head>
+<body>
+  <main>
+    <header>
+      <h1 data-diff-key="report-title">Rendered HTML Diff Viewer Debugging Report</h1>
+      <p data-diff-key="summary">An outside user opened the generated report and found that the visual diff was hard to read in lists, tables, and code snippets.</p>
+    </header>
+
+    <section data-diff-key="feedback-section">
+      <h2 data-diff-key="feedback-heading">User Feedback</h2>
+      <ol>
+        <li data-diff-key="feedback-colors">The interface should use Git-style colors for added, modified, and deleted content.</li>
+        <li data-diff-key="feedback-overflow">Some text appears outside the highlighted boxes when blocks contain inline code.</li>
+        <li data-diff-key="feedback-table">A changed table row sometimes stops looking like a table row.</li>
+        <li data-diff-key="feedback-placeholder">Deleted list items are shown as red placeholder cards instead of real list items.</li>
+        <li data-diff-key="feedback-alignment">Numbered list markers do not align after a deleted item is inserted.</li>
+      </ol>
+    </section>
+
+    <section data-diff-key="investigation-section">
+      <h2 data-diff-key="investigation-heading">Initial Investigation</h2>
+      <ul>
+        <li data-diff-key="finding-css">The first CSS pass applied padding and pseudo markers directly to every changed element.</li>
+        <li data-diff-key="finding-table">The table diff flattened a changed <code>tr</code> into text, which produced invalid table markup.</li>
+        <li data-diff-key="finding-list">The list fix used <code>list-style-position: inside</code> only on highlighted items.</li>
+      </ul>
+    </section>
+
+    <section data-diff-key="debug-table-section">
+      <h2 data-diff-key="debug-table-heading">Problem Matrix</h2>
+      <table>
+        <thead>
+          <tr data-diff-key="matrix-head">
+            <th>Area</th>
+            <th>Observed Behavior</th>
+            <th>Likely Cause</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr data-diff-key="matrix-table-row">
+            <td>Tables</td>
+            <td>Changed row text escaped its cells.</td>
+            <td>The row renderer replaced the entire <code>tr</code> content.</td>
+          </tr>
+          <tr data-diff-key="matrix-list-row">
+            <td>Lists</td>
+            <td>Deleted items had a large red card and no normal marker.</td>
+            <td>The deleted item was rendered as a generic <code>div</code>.</td>
+          </tr>
+        </tbody>
+      </table>
+    </section>
+
+    <section data-diff-key="code-section">
+      <h2 data-diff-key="code-heading">Code Path Under Review</h2>
+      <pre data-diff-key="removed-placeholder-code"><code>function createRemovedPlaceholder(block, doc) {
+  const placeholder = doc.createElement("div");
+  placeholder.className = "rhd-removed-block";
+  placeholder.textContent = "Deleted " + readableKind(block.kind);
+  return placeholder;
+}</code></pre>
+    </section>
+
+    <section data-diff-key="next-section">
+      <h2 data-diff-key="next-heading">Next Debugging Steps</h2>
+      <ol>
+        <li data-diff-key="step-table">Handle table rows without replacing the <code>tr</code>.</li>
+        <li data-diff-key="step-placeholder">Keep the red deleted placeholder for list items.</li>
+        <li data-diff-key="step-marker">Try moving list markers inside highlighted boxes.</li>
+      </ol>
+    </section>
+
+    <section data-diff-key="risk-section">
+      <h2 data-diff-key="risk-heading">Remaining Risk</h2>
+      <blockquote data-diff-key="risk-note">The report may still look acceptable in the fixture while breaking for a user with inline code, changed tables, or deleted ordered-list items.</blockquote>
+    </section>
+  </main>
+</body>
+</html>

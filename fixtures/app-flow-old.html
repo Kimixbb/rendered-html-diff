@@ -1,0 +1,132 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Rendered HTML Diff App Flow</title>
+  <style>
+    :root {
+      --bg: #f5f7fb;
+      --panel: #ffffff;
+      --ink: #1f2328;
+      --muted: #626c7a;
+      --line: #d5dce8;
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+
+    body {
+      margin: 0;
+      background: var(--bg);
+      color: var(--ink);
+      font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      line-height: 1.55;
+    }
+
+    main {
+      max-width: 1080px;
+      margin: 0 auto;
+      padding: 32px 24px 56px;
+    }
+
+    header {
+      border-bottom: 1px solid var(--line);
+      margin-bottom: 24px;
+      padding-bottom: 16px;
+    }
+
+    h1 {
+      margin: 0;
+      font-size: 30px;
+      letter-spacing: 0;
+    }
+
+    h2 {
+      margin: 28px 0 12px;
+      font-size: 20px;
+      letter-spacing: 0;
+    }
+
+    p,
+    li {
+      font-size: 15px;
+    }
+
+    .summary {
+      max-width: 820px;
+      color: var(--muted);
+    }
+
+    .graph-panel {
+      width: 100%;
+      margin: 0;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: var(--panel);
+      padding: 18px;
+      overflow-x: auto;
+    }
+
+    pre.graph-panel {
+      color: var(--muted);
+      font: 13px/1.5 "SFMono-Regular", Consolas, "Liberation Mono", monospace;
+      white-space: pre;
+    }
+  </style>
+</head>
+<body>
+  <main>
+    <header>
+      <h1 data-diff-key="title">Rendered HTML Diff App Flow</h1>
+      <p class="summary" data-diff-key="summary">This draft uses Mermaid diagrams, but it still describes the app as a short chain instead of explaining where matching, highlighting, and navigation happen.</p>
+    </header>
+
+    <section data-diff-key="build-flow-section">
+      <h2 data-diff-key="build-flow-heading">Build-Time Flow</h2>
+      <pre class="mermaid graph-panel" data-diff-key="build-flow-graphic" data-diff-kind="graphic">
+flowchart LR
+  before["before.html"]
+  after["after.html"]
+  cli["CLI"]
+  report["diff.html"]
+
+  before --> cli
+  after --> cli
+  cli --> report
+
+  classDef file fill:#ddf4ff,stroke:#0969da,color:#24292f;
+  classDef tool fill:#f0f6ff,stroke:#548dff,color:#24292f;
+  classDef output fill:#dafbe1,stroke:#2da44e,color:#24292f;
+  class before,after file;
+  class cli tool;
+  class report output;
+      </pre>
+      <p data-diff-key="build-flow-caption">The draft makes the CLI feel like a black box. It does not show sanitizing input or embedding both documents into a portable report.</p>
+    </section>
+
+    <section data-diff-key="runtime-flow-section">
+      <h2 data-diff-key="runtime-flow-heading">Browser Runtime Flow</h2>
+      <pre class="mermaid graph-panel" data-diff-key="runtime-flow-graphic" data-diff-kind="graphic">
+flowchart LR
+  report["Report"]
+  parser["DOMParser"]
+  viewer["Viewer"]
+  sidebar["Side panel"]
+
+  report --> parser --> viewer
+  viewer --> sidebar
+
+  classDef browser fill:#fff8c5,stroke:#9a6700,color:#24292f;
+  classDef model fill:#fbefff,stroke:#8250df,color:#24292f;
+  classDef output fill:#dafbe1,stroke:#2da44e,color:#24292f;
+  class report,browser browser;
+  class parser model;
+  class viewer,sidebar output;
+      </pre>
+      <p data-diff-key="runtime-flow-caption">The draft names the browser pieces, but it does not explain the actual sequence of parsing blocks, matching identities, applying highlights, and scrolling from the side panel.</p>
+    </section>
+  </main>
+</body>
+</html>
