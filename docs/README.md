@@ -48,8 +48,7 @@ being converted into a static preview.
 - **Parent report**: the outer generated HTML document that owns the sidebar,
   counts, iframe creation, and diff computation.
 - **Frame bridge**: the trusted script injected into each sandboxed input frame.
-  It collects rendered blocks, applies highlights, and handles focus or preview
-  commands.
+  It collects rendered blocks, applies highlights, and handles focus commands.
 - **Semantic block**: a user-visible unit such as a heading, paragraph, list
   item, table row, code block, or graphic block.
 - **Graphic block**: a diff block with `data-diff-kind="graphic"`, currently

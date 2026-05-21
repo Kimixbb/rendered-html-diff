@@ -88,8 +88,10 @@ When changing Mermaid behavior:
 When changing sidebar behavior:
 
 - preserve keyboard access
-- keep hover preview temporary
-- keep click focus durable
+- keep row hover and keyboard focus as parent-only full-label reveal
+- do not reintroduce hover-to-frame preview messages
+- keep click focus as the durable frame navigation action
+- keep resize limits, drag behavior, and keyboard resizing documented and tested
 - use bridge messages instead of parent frame DOM access
 
 ## Useful Static Checks

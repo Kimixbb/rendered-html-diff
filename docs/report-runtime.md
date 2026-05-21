@@ -43,20 +43,34 @@ The parent waits until both frames send block lists. It then:
 2. Renders summary counts.
 3. Builds changed-block sidebar buttons.
 4. Sends the diff instructions to the `after` frame.
-5. Sends focus or preview commands when the user interacts with the sidebar.
+5. Sends a focus command to the `after` frame when the user clicks a sidebar
+   row.
 
 The parent never directly reads or writes the frame DOM.
 
 ## Sidebar Behavior
 
-The sidebar supports three interactions:
+The sidebar supports four interactions:
 
-- Collapse or expand the sidebar to give the live app more room.
-- Hover or keyboard-focus a changed-block row to preview the target in the
-  `after` frame.
-- Click a changed-block row to scroll to and pulse the target.
+- Collapse or expand the sidebar to give the live app more room. The collapsed
+  state keeps a narrow rail visible so the user can expand it again.
+- Resize the sidebar with the vertical separator between the sidebar and the
+  iframe. Width is clamped between 280px and 560px. The separator also supports
+  keyboard resizing: `ArrowLeft` and `ArrowRight` move by 16px, `Shift` plus an
+  arrow moves by 32px, `Home` jumps to 280px, and `End` jumps to 560px.
+- Hover, pointer-hover, keyboard-focus, or click a changed-block row to expand
+  that row in place. The expanded row shows the full sidebar label and metadata,
+  with wrapping allowed for long paths or summaries.
+- Click a changed-block row to scroll to and pulse the target in the `after`
+  frame.
 
-Preview is temporary. Click focus is the durable navigation action.
+Sidebar hover is parent-only UI state. It does not send a frame message, it does
+not scroll the `after` frame, and it does not add a native `title` tooltip. The
+row keeps the full label in its own text content, while `aria-label` provides the
+same label and metadata for assistive technology.
+
+Click focus is the durable navigation action. It is the only sidebar row
+interaction that asks the `after` frame to move.
 
 ## Frame Injection
 

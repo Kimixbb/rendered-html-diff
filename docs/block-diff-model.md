@@ -29,7 +29,9 @@ Each serialized block includes:
 - `headingPath`: heading context at collection time.
 - `index`: collection order.
 - `html`: rendered outer HTML snapshot.
-- `label`: sidebar label.
+- `label`: full sidebar label. It should not be pre-truncated in data. The
+  sidebar may visually clamp the row while idle, then reveal the full label in
+  place on hover, pointer hover, keyboard focus, or click.
 
 ## Identity Rules
 

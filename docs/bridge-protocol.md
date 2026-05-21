@@ -93,34 +93,9 @@ Sent when a user clicks a sidebar row.
 
 The frame scrolls to the rendered target and applies the focus pulse.
 
-### `preview`
-
-Sent when a user hovers or keyboard-focuses a sidebar row.
-
-```ts
-{
-  source: "rendered-html-diff",
-  token: string,
-  type: "preview",
-  identity: string
-}
-```
-
-The frame scrolls to the rendered target and applies a temporary preview pulse.
-
-### `clear-preview`
-
-Sent when hover or keyboard focus leaves a sidebar row.
-
-```ts
-{
-  source: "rendered-html-diff",
-  token: string,
-  type: "clear-preview"
-}
-```
-
-The frame removes any preview pulse.
+Sidebar hover, pointer hover, and keyboard focus are handled entirely inside the
+parent report. They expand the sidebar row text in place and do not send bridge
+messages.
 
 ## Custom Focus Hook
 
@@ -132,6 +107,6 @@ window.__renderedHtmlDiffFocus = (identity, target) => {
 };
 ```
 
-The bridge calls this hook before applying focus or preview styling. This lets an
-app open a tab, reveal a panel, or select internal UI before the report scrolls
-to the target.
+The bridge calls this hook before applying focus styling. This lets an app open
+a tab, reveal a panel, or select internal UI before the report scrolls to the
+target.

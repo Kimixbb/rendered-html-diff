@@ -63,15 +63,34 @@ export function renderStandaloneReport(input: ReportInput): string {
     }
 
     .rhd-shell {
+      --rhd-sidebar-width: 360px;
+      --rhd-sidebar-min-width: 280px;
+      --rhd-sidebar-max-width: 560px;
       display: grid;
-      grid-template-columns: 360px minmax(0, 1fr);
+      grid-template-columns: var(--rhd-sidebar-width) minmax(0, 1fr);
       height: 100vh;
+      transition: grid-template-columns 180ms ease;
+    }
+
+    .rhd-shell.rhd-sidebar-collapsed {
+      grid-template-columns: 48px minmax(0, 1fr);
+    }
+
+    .rhd-shell.rhd-sidebar-resizing {
+      cursor: col-resize;
+      user-select: none;
+    }
+
+    .rhd-shell.rhd-sidebar-resizing iframe {
+      pointer-events: none;
     }
 
     .rhd-sidebar {
+      position: relative;
       display: flex;
       min-height: 0;
       flex-direction: column;
+      overflow: hidden;
       border-right: 1px solid var(--border);
       background: var(--surface);
       color: var(--text);
@@ -81,6 +100,13 @@ export function renderStandaloneReport(input: ReportInput): string {
       padding: 16px;
       border-bottom: 1px solid var(--border);
       background: var(--surface-muted);
+    }
+
+    .rhd-topbar-heading {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 10px;
     }
 
     .rhd-title {
@@ -96,6 +122,121 @@ export function renderStandaloneReport(input: ReportInput): string {
       font-size: 12px;
       line-height: 1.4;
       overflow-wrap: anywhere;
+    }
+
+    .rhd-sidebar-toggle {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      flex: 0 0 auto;
+      width: 30px;
+      height: 30px;
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      background: var(--surface);
+      color: var(--muted);
+      cursor: pointer;
+      font: inherit;
+      padding: 0;
+    }
+
+    .rhd-sidebar-toggle:hover,
+    .rhd-sidebar-toggle:focus-visible {
+      border-color: var(--blue);
+      color: var(--blue);
+      box-shadow: 0 0 0 2px rgba(9, 105, 218, 0.16);
+      outline: none;
+    }
+
+    .rhd-sidebar-toggle-icon {
+      position: relative;
+      width: 16px;
+      height: 16px;
+    }
+
+    .rhd-sidebar-toggle-icon::before {
+      content: "";
+      position: absolute;
+      top: 2px;
+      bottom: 2px;
+      left: 2px;
+      width: 5px;
+      border: 1px solid currentColor;
+      border-radius: 2px;
+    }
+
+    .rhd-sidebar-toggle-icon::after {
+      content: "";
+      position: absolute;
+      top: 5px;
+      left: 9px;
+      width: 5px;
+      height: 5px;
+      border-bottom: 2px solid currentColor;
+      border-left: 2px solid currentColor;
+      transform: rotate(45deg);
+      transition: transform 160ms ease, left 160ms ease;
+    }
+
+    .rhd-shell.rhd-sidebar-collapsed .rhd-topbar {
+      padding: 10px 8px;
+    }
+
+    .rhd-shell.rhd-sidebar-collapsed .rhd-topbar-heading {
+      justify-content: center;
+    }
+
+    .rhd-shell.rhd-sidebar-collapsed .rhd-sidebar-toggle-icon::after {
+      left: 6px;
+      transform: rotate(225deg);
+    }
+
+    .rhd-shell.rhd-sidebar-collapsed .rhd-title,
+    .rhd-shell.rhd-sidebar-collapsed .rhd-subtitle,
+    .rhd-shell.rhd-sidebar-collapsed .rhd-stats,
+    .rhd-shell.rhd-sidebar-collapsed .rhd-list-header,
+    .rhd-shell.rhd-sidebar-collapsed .rhd-change-list {
+      display: none;
+      opacity: 0;
+      pointer-events: none;
+      visibility: hidden;
+    }
+
+    .rhd-shell.rhd-sidebar-collapsed .rhd-sidebar-resizer {
+      display: none;
+    }
+
+    .rhd-sidebar-resizer {
+      position: absolute;
+      top: 0;
+      right: -4px;
+      z-index: 4;
+      width: 8px;
+      height: 100%;
+      cursor: col-resize;
+      touch-action: none;
+    }
+
+    .rhd-sidebar-resizer::before {
+      content: "";
+      position: absolute;
+      top: 10px;
+      right: 3px;
+      bottom: 10px;
+      width: 2px;
+      border-radius: 2px;
+      background: transparent;
+      transition: background 160ms ease, box-shadow 160ms ease;
+    }
+
+    .rhd-sidebar-resizer:hover::before,
+    .rhd-sidebar-resizer:focus-visible::before {
+      background: var(--blue);
+      box-shadow: 0 0 0 3px rgba(9, 105, 218, 0.14);
+    }
+
+    .rhd-sidebar-resizer:focus-visible {
+      outline: none;
     }
 
     .rhd-stats {
@@ -194,6 +335,20 @@ export function renderStandaloneReport(input: ReportInput): string {
       border-color: var(--blue);
       box-shadow: 0 0 0 2px rgba(9, 105, 218, 0.16);
       outline: none;
+    }
+
+    .rhd-change-button:hover .rhd-change-title,
+    .rhd-change-button-expanded .rhd-change-title,
+    .rhd-change-button:focus .rhd-change-title,
+    .rhd-change-button:focus-visible .rhd-change-title,
+    .rhd-change-button:hover .rhd-change-meta,
+    .rhd-change-button-expanded .rhd-change-meta,
+    .rhd-change-button:focus .rhd-change-meta,
+    .rhd-change-button:focus-visible .rhd-change-meta {
+      overflow: visible;
+      overflow-wrap: anywhere;
+      text-overflow: clip;
+      white-space: normal;
     }
 
     .rhd-change-button-added {
@@ -382,9 +537,18 @@ export function renderStandaloneReport(input: ReportInput): string {
         min-height: 100vh;
       }
 
+      .rhd-shell.rhd-sidebar-collapsed {
+        grid-template-columns: 1fr;
+        grid-template-rows: 52px minmax(520px, 1fr);
+      }
+
       .rhd-sidebar {
         border-right: 0;
         border-bottom: 1px solid var(--border);
+      }
+
+      .rhd-sidebar-resizer {
+        display: none;
       }
 
       .rhd-preview-toolbar {
@@ -410,9 +574,14 @@ export function renderStandaloneReport(input: ReportInput): string {
 </head>
 <body>
   <div class="rhd-shell">
-    <aside class="rhd-sidebar">
+    <aside class="rhd-sidebar" id="rhd-sidebar-panel">
       <div class="rhd-topbar">
-        <h1 class="rhd-title">Rendered HTML Diff</h1>
+        <div class="rhd-topbar-heading">
+          <h1 class="rhd-title">Rendered HTML Diff</h1>
+          <button class="rhd-sidebar-toggle" id="rhd-sidebar-toggle" type="button" aria-controls="rhd-sidebar-panel" aria-expanded="true" aria-label="Collapse sidebar" title="Collapse sidebar">
+            <span class="rhd-sidebar-toggle-icon" aria-hidden="true"></span>
+          </button>
+        </div>
         <p class="rhd-subtitle" id="rhd-generated"></p>
       </div>
       <div class="rhd-stats" aria-label="Diff summary">
@@ -434,6 +603,7 @@ export function renderStandaloneReport(input: ReportInput): string {
         <code>+ / ~ / -</code>
       </div>
       <div class="rhd-change-list" id="rhd-change-list"></div>
+      <div class="rhd-sidebar-resizer" id="rhd-sidebar-resizer" role="separator" aria-label="Resize sidebar" aria-orientation="vertical" aria-controls="rhd-sidebar-panel" aria-valuemin="280" aria-valuemax="560" aria-valuenow="360" tabindex="0"></div>
     </aside>
     <main class="rhd-preview-wrap">
       <div class="rhd-preview-toolbar">
@@ -1710,13 +1880,10 @@ function frameBridgeScript(): string {
       return sectionTitle ? sectionTitle + " diagram" : displayKey + " diagram";
     }
 
-    if (text.length <= 72) {
-      return text;
-    }
     if (headingPath.length > 0) {
-      return headingPath[headingPath.length - 1] + ": " + text.slice(0, 56) + "...";
+      return headingPath[headingPath.length - 1] + ": " + text;
     }
-    return displayKey + ": " + text.slice(0, 56) + "...";
+    return text.length <= 72 ? text : displayKey + ": " + text;
   }
 
   function fingerprint(text) {
@@ -1807,8 +1974,11 @@ function viewerScript(): string {
   return String.raw`(() => {
   const dataNode = document.getElementById("rhd-data");
   const data = JSON.parse(dataNode.textContent);
+  const shell = document.querySelector(".rhd-shell");
   const beforeIframe = document.getElementById("rhd-before-preview");
   const iframe = document.getElementById("rhd-preview");
+  const sidebarToggle = document.getElementById("rhd-sidebar-toggle");
+  const sidebarResizer = document.getElementById("rhd-sidebar-resizer");
   const changeList = document.getElementById("rhd-change-list");
   const filePair = document.getElementById("rhd-file-pair");
   const generated = document.getElementById("rhd-generated");
@@ -1818,6 +1988,9 @@ function viewerScript(): string {
   const mermaidRuntime = document.getElementById("rhd-mermaid-runtime").textContent || "";
   const frameBridge = document.getElementById("rhd-frame-bridge").textContent || "";
   const frameToken = data.generatedAt + ":" + Math.random().toString(36).slice(2);
+  const SIDEBAR_MIN_WIDTH = 280;
+  const SIDEBAR_MAX_WIDTH = 560;
+  const SIDEBAR_DEFAULT_WIDTH = 360;
   const frameBlocks = {
     before: null,
     after: null
@@ -1830,10 +2003,127 @@ function viewerScript(): string {
   afterStrong.textContent = data.afterPath;
   filePair.append(beforeStrong, document.createTextNode(" to "), afterStrong);
   generated.textContent = "Generated " + new Date(data.generatedAt).toLocaleString();
+  setupSidebarToggle();
+  setupSidebarResize();
 
   window.addEventListener("message", handleFrameMessage);
   beforeIframe.srcdoc = createFrameHtml(data.beforeHtml, "before");
   iframe.srcdoc = createFrameHtml(data.afterHtml, "after");
+
+  function setupSidebarToggle() {
+    if (!shell || !sidebarToggle) {
+      return;
+    }
+
+    setSidebarCollapsed(false);
+    sidebarToggle.addEventListener("click", () => {
+      setSidebarCollapsed(!shell.classList.contains("rhd-sidebar-collapsed"));
+    });
+  }
+
+  function setSidebarCollapsed(collapsed) {
+    shell.classList.toggle("rhd-sidebar-collapsed", collapsed);
+    // Keep the expanded state available to assistive technology users.
+    sidebarToggle.setAttribute("aria-expanded", String(!collapsed));
+    sidebarToggle.setAttribute("aria-label", collapsed ? "Expand sidebar" : "Collapse sidebar");
+    sidebarToggle.setAttribute("title", collapsed ? "Expand sidebar" : "Collapse sidebar");
+    if (sidebarResizer) {
+      sidebarResizer.setAttribute("aria-hidden", String(collapsed));
+      sidebarResizer.tabIndex = collapsed ? -1 : 0;
+    }
+  }
+
+  function setupSidebarResize() {
+    if (!shell || !sidebarResizer) {
+      return;
+    }
+
+    setSidebarWidth(readSidebarWidth());
+    sidebarResizer.addEventListener("pointerdown", startSidebarResize);
+    sidebarResizer.addEventListener("keydown", handleSidebarResizeKeydown);
+  }
+
+  function startSidebarResize(event) {
+    if (shell.classList.contains("rhd-sidebar-collapsed")) {
+      return;
+    }
+
+    event.preventDefault();
+    const startX = event.clientX;
+    const startWidth = readSidebarWidth();
+    shell.classList.add("rhd-sidebar-resizing");
+
+    if (typeof sidebarResizer.setPointerCapture === "function") {
+      sidebarResizer.setPointerCapture(event.pointerId);
+    }
+
+    const handlePointerMove = (moveEvent) => {
+      setSidebarWidth(startWidth + moveEvent.clientX - startX);
+    };
+
+    const stopSidebarResize = () => {
+      shell.classList.remove("rhd-sidebar-resizing");
+      sidebarResizer.removeEventListener("pointermove", handlePointerMove);
+      sidebarResizer.removeEventListener("pointerup", stopSidebarResize);
+      sidebarResizer.removeEventListener("pointercancel", stopSidebarResize);
+      if (typeof sidebarResizer.releasePointerCapture === "function") {
+        sidebarResizer.releasePointerCapture(event.pointerId);
+      }
+    };
+
+    sidebarResizer.addEventListener("pointermove", handlePointerMove);
+    sidebarResizer.addEventListener("pointerup", stopSidebarResize);
+    sidebarResizer.addEventListener("pointercancel", stopSidebarResize);
+  }
+
+  function handleSidebarResizeKeydown(event) {
+    if (shell.classList.contains("rhd-sidebar-collapsed")) {
+      return;
+    }
+
+    if (event.key === "Home") {
+      event.preventDefault();
+      setSidebarWidth(SIDEBAR_MIN_WIDTH);
+      return;
+    }
+
+    if (event.key === "End") {
+      event.preventDefault();
+      setSidebarWidth(SIDEBAR_MAX_WIDTH);
+      return;
+    }
+
+    if (event.key !== "ArrowLeft" && event.key !== "ArrowRight") {
+      return;
+    }
+
+    event.preventDefault();
+    const step = event.shiftKey ? 32 : 16;
+    const direction = event.key === "ArrowRight" ? 1 : -1;
+    setSidebarWidth(readSidebarWidth() + direction * step);
+  }
+
+  function setSidebarWidth(width) {
+    const nextWidth = clampSidebarWidth(width);
+    shell.style.setProperty("--rhd-sidebar-width", nextWidth + "px");
+    if (sidebarResizer) {
+      sidebarResizer.setAttribute("aria-valuenow", String(nextWidth));
+    }
+  }
+
+  function readSidebarWidth() {
+    const customWidth = Number.parseFloat(shell.style.getPropertyValue("--rhd-sidebar-width"));
+    if (Number.isFinite(customWidth)) {
+      return customWidth;
+    }
+
+    const currentWidth = document.getElementById("rhd-sidebar-panel")?.getBoundingClientRect().width;
+    return Number.isFinite(currentWidth) && currentWidth > 0 ? currentWidth : SIDEBAR_DEFAULT_WIDTH;
+  }
+
+  function clampSidebarWidth(width) {
+    return Math.round(Math.min(SIDEBAR_MAX_WIDTH, Math.max(SIDEBAR_MIN_WIDTH, width)));
+  }
 
   function handleFrameMessage(event) {
     const message = event.data;
@@ -2398,14 +2688,29 @@ function viewerScript(): string {
       meta.className = "rhd-change-meta";
       meta.textContent = statusLabel(entry.status) + " " + readableKind(entry.kind) + " - " + entry.identity.replace(/^(key|section|fallback):/, "");
 
+      const fullLabel = title.textContent + "\n" + meta.textContent;
+      button.setAttribute("aria-label", title.textContent + ". " + meta.textContent);
       main.append(title, meta);
       button.append(badge, main);
-      button.addEventListener("click", () => postToAfterFrame({
-        type: "focus",
-        identity: entry.identity
-      }));
+      button.addEventListener("mouseenter", () => setSidebarItemExpanded(button, true));
+      button.addEventListener("pointerenter", () => setSidebarItemExpanded(button, true));
+      button.addEventListener("focus", () => setSidebarItemExpanded(button, true));
+      button.addEventListener("mouseleave", () => setSidebarItemExpanded(button, false));
+      button.addEventListener("pointerleave", () => setSidebarItemExpanded(button, false));
+      button.addEventListener("blur", () => setSidebarItemExpanded(button, false));
+      button.addEventListener("click", () => {
+        setSidebarItemExpanded(button, true);
+        postToAfterFrame({
+          type: "focus",
+          identity: entry.identity
+        });
+      });
       changeList.append(button);
     }
+  }
+
+  function setSidebarItemExpanded(button, expanded) {
+    button.classList.toggle("rhd-change-button-expanded", expanded);
   }
 
   function focusEntry(entry, afterDoc) {
@@ -2605,13 +2910,10 @@ function viewerScript(): string {
       return sectionTitle ? sectionTitle + " diagram" : displayKey + " diagram";
     }
 
-    if (text.length <= 72) {
-      return text;
-    }
     if (headingPath.length > 0) {
-      return headingPath[headingPath.length - 1] + ": " + text.slice(0, 56) + "...";
+      return headingPath[headingPath.length - 1] + ": " + text;
     }
-    return displayKey + ": " + text.slice(0, 56) + "...";
+    return text.length <= 72 ? text : displayKey + ": " + text;
   }
 
   function fingerprint(text) {

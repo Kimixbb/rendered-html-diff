@@ -54,6 +54,76 @@ test("rendered report uses sandboxed interactive frames", () => {
   assert.match(report, /applyDiff\(lastDiff\.entries, lastDiff\.beforeBlocks, lastDiff\.afterBlocks\)/);
 });
 
+test("rendered report lets the sidebar collapse and expand", () => {
+  const report = renderStandaloneReport({
+    beforeHtml: "<h1 data-diff-key=\"title\">Before</h1>",
+    afterHtml: "<h1 data-diff-key=\"title\">After</h1>",
+    beforePath: "before.html",
+    afterPath: "after.html"
+  });
+
+  assert.match(report, /<aside class="rhd-sidebar" id="rhd-sidebar-panel">/);
+  assert.match(report, /id="rhd-sidebar-toggle"/);
+  assert.match(report, /aria-controls="rhd-sidebar-panel"/);
+  assert.match(report, /aria-expanded="true"/);
+  assert.match(report, /\.rhd-shell\.rhd-sidebar-collapsed/);
+  assert.match(report, /function setupSidebarToggle\(\)/);
+  assert.match(report, /function setSidebarCollapsed\(collapsed\)/);
+  assert.match(report, /sidebarToggle\.addEventListener\("click"/);
+  assert.match(report, /sidebarToggle\.setAttribute\("aria-label", collapsed \? "Expand sidebar" : "Collapse sidebar"\)/);
+});
+
+test("rendered report lets the sidebar width be resized within limits", () => {
+  const report = renderStandaloneReport({
+    beforeHtml: "<h1 data-diff-key=\"title\">Before</h1>",
+    afterHtml: "<h1 data-diff-key=\"title\">After</h1>",
+    beforePath: "before.html",
+    afterPath: "after.html"
+  });
+
+  assert.match(report, /--rhd-sidebar-min-width: 280px/);
+  assert.match(report, /--rhd-sidebar-max-width: 560px/);
+  assert.match(report, /id="rhd-sidebar-resizer"/);
+  assert.match(report, /role="separator"/);
+  assert.match(report, /aria-valuemin="280"/);
+  assert.match(report, /aria-valuemax="560"/);
+  assert.match(report, /function setupSidebarResize\(\)/);
+  assert.match(report, /function startSidebarResize\(event\)/);
+  assert.match(report, /function handleSidebarResizeKeydown\(event\)/);
+  assert.match(report, /function setSidebarWidth\(width\)/);
+  assert.match(report, /function clampSidebarWidth\(width\)/);
+  assert.match(report, /sidebarResizer\.addEventListener\("pointerdown", startSidebarResize\)/);
+  assert.match(report, /sidebarResizer\.addEventListener\("keydown", handleSidebarResizeKeydown\)/);
+  assert.match(report, /Math\.min\(SIDEBAR_MAX_WIDTH, Math\.max\(SIDEBAR_MIN_WIDTH, width\)\)/);
+});
+
+test("change list entries reveal their full contents on hover and keyboard focus", () => {
+  const report = renderStandaloneReport({
+    beforeHtml: "<p data-diff-key=\"copy\">Before copy</p>",
+    afterHtml: "<p data-diff-key=\"copy\">After copy</p>",
+    beforePath: "before.html",
+    afterPath: "after.html"
+  });
+  const bridge = extractFrameBridge(report);
+
+  assert.match(report, /\.rhd-change-button:hover \.rhd-change-title/);
+  assert.match(report, /\.rhd-change-button-expanded \.rhd-change-title/);
+  assert.match(report, /\.rhd-change-button:focus-visible \.rhd-change-title/);
+  assert.match(report, /\.rhd-change-button:hover \.rhd-change-meta/);
+  assert.match(report, /function setSidebarItemExpanded\(button, expanded\)/);
+  assert.match(report, /button\.addEventListener\("mouseenter", \(\) => setSidebarItemExpanded\(button, true\)\)/);
+  assert.match(report, /button\.addEventListener\("focus", \(\) => setSidebarItemExpanded\(button, true\)\)/);
+  assert.match(report, /button\.addEventListener\("mouseleave", \(\) => setSidebarItemExpanded\(button, false\)\)/);
+  assert.match(report, /button\.addEventListener\("blur", \(\) => setSidebarItemExpanded\(button, false\)\)/);
+  assert.match(report, /const fullLabel = title\.textContent \+ "\\n" \+ meta\.textContent/);
+  assert.doesNotMatch(report, /button\.setAttribute\("title", fullLabel\)/);
+  assert.match(report, /button\.setAttribute\("aria-label", title\.textContent \+ "\. " \+ meta\.textContent\)/);
+  assert.doesNotMatch(report, /text\.slice\(0, 56\) \+ "\.\.\."/);
+  assert.doesNotMatch(report, /button\.addEventListener\("mouseenter", \(\) => previewEntry\(entry\)\)/);
+  assert.doesNotMatch(report, /type: "preview"/);
+  assert.doesNotMatch(bridge, /function previewIdentity\(identity\)/);
+});
+
 test("frame runtime is injected at the real document end, not visible source text", () => {
   const report = renderStandaloneReport({
     beforeHtml: "<p data-diff-key=\"copy\">Before</p>",

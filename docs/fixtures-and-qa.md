@@ -63,8 +63,13 @@ In the template editor report, verify:
 - AI, OCR, and Split Text tabs respond.
 - OCR sample behavior matches the fixture version.
 - Sidebar click navigation focuses the changed block.
-- Sidebar hover and keyboard focus preview the target.
-- Sidebar collapse and expand works.
+- Sidebar hover, pointer hover, keyboard focus, and click reveal the full row
+  label inside the sidebar item itself.
+- Sidebar rows do not depend on a native `title` tooltip for full text.
+- Sidebar resizing works with the drag separator and keyboard controls.
+- Sidebar width stays between 280px and 560px.
+- Sidebar collapse and expand works, and resizing is unavailable while
+  collapsed.
 
 In the app flow report, verify:
 
@@ -85,7 +90,8 @@ In the app flow report, verify:
 - startup ordering
 - raw script preservation
 - sidebar collapse
-- sidebar preview
+- sidebar bounded resizing
+- sidebar full-label reveal without hover-to-frame preview
 - late diff reapplication
 - code, table, and list highlighting
 - Mermaid entity decoding
