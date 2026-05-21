@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 import test from "node:test";
 
 import {
@@ -110,4 +111,24 @@ test("sanitizes executable HTML before report embedding", () => {
   assert(!sanitized.includes("onclick"));
   assert(!sanitized.includes("javascript:"));
   assert(!sanitized.includes("<iframe"));
+});
+
+test("template editor flow fixtures keep visible semantic blocks keyed", () => {
+  const beforeHtml = readFileSync("fixtures/template-editor-flow-before.html", "utf8");
+  const afterHtml = readFileSync("fixtures/template-editor-flow-after.html", "utf8");
+  const beforeBlocks = extractBlocksFromHtml(beforeHtml);
+  const afterBlocks = extractBlocksFromHtml(afterHtml);
+
+  // Visible fixture text should carry stable keys. The OCR behavior now lives in
+  // runnable app scripts, which the interactive report preserves separately.
+  assert(beforeBlocks.every((block) => block.diffKey));
+  assert(afterBlocks.every((block) => block.diffKey));
+
+  const changedEntries = diffBlocks(beforeBlocks, afterBlocks).filter(
+    (entry) => entry.status !== "unchanged"
+  );
+
+  assert.deepEqual(changedEntries, []);
+  assert(beforeHtml.includes('return ["Scan result: Check harness label"'));
+  assert(afterHtml.includes('return ["Check harness label"'));
 });

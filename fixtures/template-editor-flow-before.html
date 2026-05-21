@@ -1,0 +1,1467 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Template Creation Flow Sandbox</title>
+  <style>
+    :root {
+      color-scheme: light;
+      --bg: #f8fafc;
+      --surface: #ffffff;
+      --surface-soft: #f1f5f9;
+      --ink: #111827;
+      --muted: #64748b;
+      --line: #d8dee9;
+      --line-strong: #111827;
+      --accent: #0f766e;
+      --accent-soft: #ccfbf1;
+      --danger: #dc2626;
+      --shadow: 0 18px 60px rgba(15, 23, 42, .12);
+      --radius: 22px;
+      font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+
+    body {
+      margin: 0;
+      min-height: 100vh;
+      background: linear-gradient(180deg, #f8fafc 0%, #eef2f7 100%);
+      color: var(--ink);
+    }
+
+    button,
+    input,
+    textarea,
+    select {
+      font: inherit;
+    }
+
+    button {
+      cursor: pointer;
+    }
+
+    button:disabled {
+      cursor: not-allowed;
+      opacity: .45;
+    }
+
+    .app {
+      width: min(100%, 980px);
+      min-height: 100vh;
+      margin: 0 auto;
+      padding: 22px;
+      display: flex;
+      flex-direction: column;
+      gap: 18px;
+    }
+
+    .topbar {
+      position: sticky;
+      top: 0;
+      z-index: 10;
+      margin: -22px -22px 0;
+      padding: 14px 22px;
+      display: grid;
+      grid-template-columns: 44px 1fr auto;
+      align-items: center;
+      gap: 10px;
+      background: rgba(248, 250, 252, .88);
+      border-bottom: 1px solid rgba(216, 222, 233, .8);
+      backdrop-filter: blur(14px);
+    }
+
+    .icon-button {
+      width: 44px;
+      height: 44px;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      border: 0;
+      border-radius: 999px;
+      background: transparent;
+      color: var(--ink);
+      transition: background .18s ease, transform .18s ease;
+    }
+
+    .icon-button:hover {
+      background: var(--surface-soft);
+    }
+
+    .icon-button:active {
+      transform: scale(.97);
+    }
+
+    .icon {
+      width: 20px;
+      height: 20px;
+      display: block;
+      fill: none;
+      stroke: currentColor;
+      stroke-linecap: round;
+      stroke-linejoin: round;
+      stroke-width: 2;
+    }
+
+    .title-stack {
+      min-width: 0;
+    }
+
+    .eyebrow {
+      color: var(--muted);
+      font-size: 12px;
+      font-weight: 800;
+      letter-spacing: 0;
+      text-transform: uppercase;
+    }
+
+    h1 {
+      margin: 1px 0 0;
+      font-size: 24px;
+      line-height: 1.15;
+      letter-spacing: 0;
+    }
+
+    .mode-tabs {
+      display: inline-flex;
+      min-height: 44px;
+      align-items: center;
+      gap: 4px;
+      padding: 4px;
+      border: 1px solid var(--line);
+      border-radius: 999px;
+      background: var(--surface);
+    }
+
+    .mode-tabs button {
+      min-height: 34px;
+      padding: 0 14px;
+      border: 0;
+      border-radius: 999px;
+      background: transparent;
+      color: var(--muted);
+      font-size: 14px;
+      font-weight: 800;
+      white-space: nowrap;
+    }
+
+    .mode-tabs button.active {
+      background: var(--ink);
+      color: white;
+    }
+
+    .layout {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) 300px;
+      gap: 18px;
+      align-items: start;
+    }
+
+    .editor {
+      display: flex;
+      flex-direction: column;
+      gap: 18px;
+    }
+
+    .section {
+      border: 1px solid var(--line);
+      border-radius: var(--radius);
+      background: rgba(255, 255, 255, .9);
+      box-shadow: 0 1px 0 rgba(15, 23, 42, .03);
+    }
+
+    .section-inner {
+      padding: 18px;
+    }
+
+    .source-strip {
+      display: grid;
+      grid-template-columns: 1fr auto;
+      gap: 12px;
+      align-items: center;
+      padding: 14px 18px;
+      border-bottom: 1px solid var(--line);
+      background: #f9fafb;
+      border-radius: var(--radius) var(--radius) 0 0;
+    }
+
+    .source-copy {
+      min-width: 0;
+    }
+
+    .source-copy strong {
+      display: block;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+      font-size: 15px;
+    }
+
+    .source-copy span {
+      display: block;
+      color: var(--muted);
+      font-size: 13px;
+      line-height: 1.35;
+    }
+
+    .source-controls {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .field {
+      display: flex;
+      flex-direction: column;
+      gap: 7px;
+    }
+
+    label {
+      color: var(--ink);
+      font-size: 13px;
+      font-weight: 900;
+      line-height: 1.2;
+    }
+
+    .input,
+    .textarea,
+    .select {
+      width: 100%;
+      border: 2px solid var(--line);
+      border-radius: 18px;
+      background: white;
+      color: var(--ink);
+      outline: 0;
+      transition: border .18s ease, box-shadow .18s ease;
+    }
+
+    .input {
+      min-height: 58px;
+      padding: 12px 15px;
+    }
+
+    .title-input {
+      font-size: 24px;
+      font-weight: 900;
+      letter-spacing: 0;
+    }
+
+    .textarea {
+      min-height: 190px;
+      resize: vertical;
+      padding: 14px;
+      line-height: 1.45;
+    }
+
+    .select {
+      min-height: 44px;
+      padding: 0 12px;
+      font-weight: 800;
+    }
+
+    .input:focus,
+    .textarea:focus,
+    .select:focus {
+      border-color: var(--line-strong);
+      box-shadow: 0 0 0 4px rgba(17, 24, 39, .08);
+    }
+
+    .item-toolbar {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) 48px 140px;
+      gap: 8px;
+      align-items: center;
+      margin-top: 12px;
+    }
+
+    .items-header {
+      display: flex;
+      align-items: flex-end;
+      justify-content: space-between;
+      gap: 12px;
+      margin-bottom: 10px;
+    }
+
+    .items-header p {
+      margin: 0;
+      color: var(--muted);
+      font-size: 13px;
+      line-height: 1.35;
+    }
+
+    .add-big {
+      width: 100%;
+      min-height: 76px;
+      margin: 4px 0 14px;
+      border: 2px dashed #a7b1c2;
+      border-radius: 24px;
+      background: #f8fafc;
+      color: var(--ink);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 12px;
+      font-weight: 900;
+      transition: background .18s ease, border .18s ease, transform .18s ease;
+    }
+
+    .add-big:hover {
+      border-color: var(--line-strong);
+      background: white;
+    }
+
+    .add-big:active {
+      transform: scale(.99);
+    }
+
+    .add-big small {
+      display: block;
+      color: var(--muted);
+      font-size: 12px;
+      font-weight: 700;
+      margin-top: 2px;
+    }
+
+    .item-list {
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+      min-height: 180px;
+      max-height: 48vh;
+      overflow: auto;
+      padding-right: 2px;
+    }
+
+    .item-row {
+      display: grid;
+      grid-template-columns: 34px minmax(0, 1fr) 34px;
+      gap: 8px;
+      align-items: center;
+      min-height: 56px;
+      padding: 9px 10px;
+      border-radius: 18px;
+      background: var(--surface-soft);
+    }
+
+    .item-row.added {
+      background: var(--accent-soft);
+    }
+
+    .handle {
+      color: #94a3b8;
+      text-align: center;
+      font-weight: 900;
+      user-select: none;
+    }
+
+    .item-row input {
+      width: 100%;
+      min-height: 38px;
+      border: 0;
+      border-radius: 12px;
+      background: transparent;
+      color: var(--ink);
+      outline: 0;
+      padding: 6px 8px;
+    }
+
+    .item-row input:focus {
+      background: white;
+      box-shadow: inset 0 0 0 1px var(--line);
+    }
+
+    .empty {
+      display: grid;
+      place-items: center;
+      min-height: 170px;
+      border: 1px dashed var(--line);
+      border-radius: 18px;
+      color: var(--muted);
+      text-align: center;
+      padding: 20px;
+    }
+
+    .button {
+      min-height: 46px;
+      padding: 0 18px;
+      border: 2px solid var(--line-strong);
+      border-radius: 999px;
+      background: var(--ink);
+      color: white;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      gap: 8px;
+      font-weight: 900;
+      text-decoration: none;
+      transition: background .18s ease, transform .18s ease;
+    }
+
+    .button:hover {
+      background: #374151;
+    }
+
+    .button:active {
+      transform: scale(.98);
+    }
+
+    .button.secondary {
+      background: white;
+      color: var(--ink);
+    }
+
+    .button.secondary:hover {
+      background: var(--surface-soft);
+    }
+
+    .button.ghost {
+      min-height: 40px;
+      border: 0;
+      background: transparent;
+      color: var(--muted);
+      padding: 0 10px;
+    }
+
+    .button.ghost:hover {
+      background: var(--surface-soft);
+      color: var(--ink);
+    }
+
+    .button.danger {
+      border-color: #fee2e2;
+      background: #fff1f2;
+      color: var(--danger);
+    }
+
+    .button.full {
+      width: 100%;
+    }
+
+    .footer-actions {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 10px;
+      padding: 0 18px 18px;
+    }
+
+    .side {
+      position: sticky;
+      top: 88px;
+      display: flex;
+      flex-direction: column;
+      gap: 14px;
+    }
+
+    .panel-title {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 10px;
+      margin-bottom: 12px;
+    }
+
+    .panel-title h2 {
+      margin: 0;
+      font-size: 17px;
+      line-height: 1.2;
+      letter-spacing: 0;
+    }
+
+    .panel-title span {
+      color: var(--muted);
+      font-size: 12px;
+      font-weight: 800;
+    }
+
+    .flow-list {
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+      margin: 0;
+      padding: 0;
+      list-style: none;
+    }
+
+    .flow-list li {
+      display: grid;
+      grid-template-columns: 28px 1fr;
+      gap: 9px;
+      color: var(--muted);
+      font-size: 13px;
+      line-height: 1.35;
+    }
+
+    .flow-list b {
+      color: var(--ink);
+      font-size: 14px;
+    }
+
+    .step-dot {
+      width: 28px;
+      height: 28px;
+      display: inline-grid;
+      place-items: center;
+      border-radius: 999px;
+      background: var(--surface-soft);
+      color: var(--ink);
+      font-size: 12px;
+      font-weight: 900;
+    }
+
+    .settings-panel {
+      display: none;
+    }
+
+    .settings-panel.open {
+      display: block;
+    }
+
+    .regex-row {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) auto;
+      gap: 8px;
+      align-items: end;
+    }
+
+    .hint {
+      margin: 8px 0 0;
+      color: var(--muted);
+      font-size: 12px;
+      line-height: 1.35;
+    }
+
+    .status {
+      min-height: 22px;
+      margin: 8px 0 0;
+      font-size: 12px;
+      font-weight: 800;
+    }
+
+    .status.ok {
+      color: var(--accent);
+    }
+
+    .status.bad {
+      color: var(--danger);
+    }
+
+    .dialog {
+      position: fixed;
+      inset: 0;
+      z-index: 30;
+      display: none;
+      align-items: center;
+      justify-content: center;
+      padding: 18px;
+      background: rgba(15, 23, 42, .42);
+      backdrop-filter: blur(10px);
+    }
+
+    .dialog.open {
+      display: flex;
+    }
+
+    .dialog-body {
+      width: min(100%, 700px);
+      max-height: min(760px, calc(100vh - 32px));
+      overflow: auto;
+      border: 2px solid var(--line-strong);
+      border-radius: 26px;
+      background: white;
+      box-shadow: var(--shadow);
+    }
+
+    .dialog-header {
+      position: sticky;
+      top: 0;
+      z-index: 2;
+      display: grid;
+      grid-template-columns: 1fr 44px;
+      align-items: center;
+      gap: 12px;
+      padding: 18px 18px 12px;
+      background: white;
+      border-bottom: 1px solid var(--line);
+      border-radius: 24px 24px 0 0;
+    }
+
+    .dialog-header h2 {
+      margin: 0;
+      font-size: 22px;
+      letter-spacing: 0;
+    }
+
+    .dialog-content {
+      padding: 18px;
+    }
+
+    .method-grid {
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: 10px;
+    }
+
+    .method {
+      min-height: 126px;
+      padding: 14px;
+      border: 2px solid var(--line);
+      border-radius: 18px;
+      background: white;
+      text-align: left;
+      color: var(--ink);
+      transition: border .18s ease, background .18s ease, transform .18s ease;
+    }
+
+    .method:hover,
+    .method.active {
+      border-color: var(--line-strong);
+      background: #f8fafc;
+    }
+
+    .method:active {
+      transform: scale(.99);
+    }
+
+    .method svg {
+      margin-bottom: 10px;
+      color: var(--accent);
+    }
+
+    .method b {
+      display: block;
+      margin-bottom: 4px;
+    }
+
+    .method span {
+      display: block;
+      color: var(--muted);
+      font-size: 12px;
+      line-height: 1.35;
+    }
+
+    .method-pane {
+      display: none;
+      margin-top: 16px;
+    }
+
+    .method-pane.open {
+      display: block;
+    }
+
+    .preview {
+      margin-top: 12px;
+      border: 1px solid var(--line);
+      border-radius: 18px;
+      overflow: hidden;
+    }
+
+    .preview-head {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 10px;
+      min-height: 42px;
+      padding: 8px 12px;
+      background: var(--surface-soft);
+      font-size: 13px;
+      font-weight: 900;
+    }
+
+    .preview-list {
+      display: flex;
+      flex-direction: column;
+      max-height: 190px;
+      overflow: auto;
+    }
+
+    .preview-item {
+      min-height: 38px;
+      margin: 0;
+      padding: 9px 12px;
+      border-top: 1px solid var(--line);
+      font-size: 14px;
+    }
+
+    .placeholder-box {
+      display: grid;
+      gap: 12px;
+      padding: 18px;
+      border: 2px dashed var(--line);
+      border-radius: 18px;
+      background: #f8fafc;
+      color: var(--muted);
+      text-align: center;
+    }
+
+    .placeholder-box b {
+      color: var(--ink);
+    }
+
+    .dialog-actions {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 10px;
+      margin-top: 16px;
+    }
+
+    .toast {
+      position: fixed;
+      right: 18px;
+      bottom: 18px;
+      z-index: 40;
+      min-width: min(360px, calc(100vw - 36px));
+      display: none;
+      align-items: start;
+      gap: 10px;
+      padding: 14px;
+      border-radius: 18px;
+      background: #111827;
+      color: white;
+      box-shadow: var(--shadow);
+      font-size: 14px;
+      line-height: 1.35;
+    }
+
+    .toast.show {
+      display: flex;
+    }
+
+    .toast b {
+      display: block;
+      margin-bottom: 2px;
+    }
+
+    .mobile-note {
+      display: none;
+    }
+
+    @media (max-width: 860px) {
+      .layout {
+        grid-template-columns: 1fr;
+      }
+
+      .side {
+        position: static;
+      }
+
+      .mode-tabs {
+        width: 100%;
+        overflow: auto;
+      }
+
+      .topbar {
+        grid-template-columns: 44px 1fr;
+      }
+
+      .topbar .mode-tabs {
+        grid-column: 1 / -1;
+      }
+    }
+
+    @media (max-width: 620px) {
+      .app {
+        padding: 16px;
+      }
+
+      .topbar {
+        margin: -16px -16px 0;
+        padding: 12px 16px;
+      }
+
+      h1 {
+        font-size: 21px;
+      }
+
+      .source-strip,
+      .items-header,
+      .footer-actions,
+      .dialog-actions,
+      .regex-row,
+      .item-toolbar {
+        grid-template-columns: 1fr;
+      }
+
+      .source-strip {
+        display: flex;
+        flex-direction: column;
+        align-items: stretch;
+      }
+
+      .source-controls {
+        display: grid;
+        grid-template-columns: 1fr;
+      }
+
+      .method-grid {
+        grid-template-columns: 1fr;
+      }
+
+      .mobile-note {
+        display: inline;
+      }
+    }
+  </style>
+</head>
+<body>
+  <main class="app" aria-label="Template editor flow sandbox">
+    <header class="topbar">
+      <button class="icon-button" aria-label="Back">
+        <svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M19 12H5"></path><path d="M12 19l-7-7 7-7"></path></svg>
+      </button>
+      <div class="title-stack">
+        <div class="eyebrow">Design sandbox</div>
+        <h1 id="screenTitle" data-diff-key="screen-title">New Template</h1>
+      </div>
+      <div class="mode-tabs" aria-label="Prototype mode">
+        <button type="button" class="active" data-mode="new">New</button>
+        <button type="button" data-mode="duplicate">Duplicate</button>
+        <button type="button" data-mode="edit">Edit</button>
+      </div>
+    </header>
+
+    <div class="layout">
+      <section class="editor" aria-label="Template editor">
+        <div class="section">
+          <div class="source-strip">
+            <div class="source-copy">
+              <strong id="sourceLabel">Blank template draft</strong>
+              <span id="sourceHelp">Start empty, then add one item or append a generated/imported batch.</span>
+            </div>
+            <div class="source-controls">
+              <select id="sourceTemplate" class="select" aria-label="Source template"></select>
+              <button id="loadSource" type="button" class="button secondary">Use source</button>
+            </div>
+          </div>
+          <div class="section-inner">
+            <div class="field">
+              <label for="templateTitle">Template title</label>
+              <input id="templateTitle" class="input title-input" value="Untitled checklist" />
+            </div>
+          </div>
+        </div>
+
+        <div class="section">
+          <div class="section-inner">
+            <div class="items-header">
+              <div>
+                <label>Items</label>
+                <p id="appendRule" data-diff-key="append-rule">Assisted additions append after the current draft items.</p>
+              </div>
+              <span id="itemCount" class="eyebrow">0 items</span>
+            </div>
+
+            <button id="openAddDialog" type="button" class="add-big">
+              <svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14"></path><path d="M5 12h14"></path></svg>
+              <span>Add items<small>AI, OCR placeholder, or regex split</small></span>
+            </button>
+
+            <div class="item-toolbar">
+              <input id="singleItemInput" class="input" placeholder="Add a single item" />
+              <button id="addSingleItem" class="button" type="button" aria-label="Add single item">
+                <svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14"></path><path d="M5 12h14"></path></svg>
+              </button>
+              <select id="sortSelect" class="select" aria-label="Sort items">
+                <option value="custom">Custom</option>
+                <option value="az">A to Z</option>
+                <option value="za">Z to A</option>
+                <option value="newest">Newest</option>
+              </select>
+            </div>
+
+            <div id="itemList" class="item-list" aria-live="polite"></div>
+          </div>
+          <div class="footer-actions">
+            <button type="button" class="button secondary">Cancel</button>
+            <button id="saveButton" type="button" class="button">Create Template</button>
+          </div>
+        </div>
+      </section>
+
+      <aside class="side" aria-label="Flow notes and settings">
+        <section class="section">
+          <div class="section-inner">
+            <div class="panel-title">
+              <h2 data-diff-key="flow-heading">User flow</h2>
+              <span id="flowModeLabel">New</span>
+            </div>
+            <ol class="flow-list" id="flowList"></ol>
+          </div>
+        </section>
+
+        <section class="section">
+          <div class="section-inner">
+            <div class="panel-title">
+              <h2 data-diff-key="regex-heading">Regex settings</h2>
+              <button id="toggleSettings" type="button" class="button ghost">Open</button>
+            </div>
+            <div id="settingsPanel" class="settings-panel">
+              <div class="regex-row">
+                <div class="field">
+                  <label for="regexInput">Separator regex</label>
+                  <input id="regexInput" class="input" value="\\n+|[:;]|\\s+-\\s+|\\s*\\u2022\\s*" />
+                </div>
+                <button id="saveRegex" type="button" class="button secondary">Save</button>
+              </div>
+              <p class="hint" data-diff-key="regex-help">Used by Split Text. Save validates the regex before previewing or appending.</p>
+              <p id="regexStatus" class="status" aria-live="polite"></p>
+            </div>
+          </div>
+        </section>
+      </aside>
+    </div>
+  </main>
+
+  <div id="addDialog" class="dialog" role="dialog" aria-modal="true" aria-labelledby="addDialogTitle">
+    <div class="dialog-body">
+      <div class="dialog-header">
+        <h2 id="addDialogTitle" data-diff-key="add-dialog-title">Add items</h2>
+        <button id="closeDialog" type="button" class="icon-button" aria-label="Close dialog">
+          <svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M18 6L6 18"></path><path d="M6 6l12 12"></path></svg>
+        </button>
+      </div>
+      <div class="dialog-content">
+        <div class="method-grid" aria-label="Add method">
+          <button class="method active" type="button" data-method="ai">
+            <svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3l1.8 5.2L19 10l-5.2 1.8L12 17l-1.8-5.2L5 10l5.2-1.8L12 3z"></path><path d="M19 15l.8 2.2L22 18l-2.2.8L19 21l-.8-2.2L16 18l2.2-.8L19 15z"></path></svg>
+            <b>AI</b>
+            <span>Generate checklist items from a short prompt.</span>
+          </button>
+          <button class="method" type="button" data-method="ocr">
+            <svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M7 3H5a2 2 0 0 0-2 2v2"></path><path d="M17 3h2a2 2 0 0 1 2 2v2"></path><path d="M21 17v2a2 2 0 0 1-2 2h-2"></path><path d="M7 21H5a2 2 0 0 1-2-2v-2"></path><path d="M7 8h10"></path><path d="M7 12h8"></path><path d="M7 16h6"></path></svg>
+            <b>OCR</b>
+            <span>Reserved path for camera, image upload, or pasted screenshot.</span>
+          </button>
+          <button class="method" type="button" data-method="regex">
+            <svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h16"></path><path d="M4 12h16"></path><path d="M4 17h10"></path></svg>
+            <b>Split Text</b>
+            <span>Paste a long string and split it with the Settings regex.</span>
+          </button>
+        </div>
+
+        <section id="pane-ai" class="method-pane open">
+          <div class="field">
+            <label for="aiPrompt">Prompt</label>
+            <textarea id="aiPrompt" class="textarea">Add overlooked pre-flight checks for a small field team.</textarea>
+          </div>
+          <div class="preview">
+            <div class="preview-head">
+              <span>AI preview</span>
+              <span>Simulated</span>
+            </div>
+            <div id="aiPreview" class="preview-list"></div>
+          </div>
+          <div class="dialog-actions">
+            <button type="button" class="button secondary" data-close>Add nothing</button>
+            <button id="appendAI" type="button" class="button">Append AI items</button>
+          </div>
+        </section>
+
+        <section id="pane-ocr" class="method-pane">
+          <div class="placeholder-box">
+            <b>OCR addition placeholder</b>
+            <span>The production flow can add camera capture, image upload, and pasted screenshots here. Output should preview detected lines before appending.</span>
+            <button id="appendOCRSample" type="button" class="button secondary">Append sample OCR result</button>
+          </div>
+          <div class="preview">
+            <div class="preview-head">
+              <span>OCR preview</span>
+              <span>Placeholder</span>
+            </div>
+            <div id="ocrPreview" class="preview-list"></div>
+          </div>
+          <div class="dialog-actions">
+            <button type="button" class="button secondary" data-close>Add nothing</button>
+            <button id="appendOCR" type="button" class="button">Append OCR items</button>
+          </div>
+        </section>
+
+        <section id="pane-regex" class="method-pane">
+          <div class="field">
+            <label for="bulkText">Paste text</label>
+            <textarea id="bulkText" class="textarea">Inspect fire extinguisher: Replace expired labels
+Check spill kit - Restock gloves
+Verify emergency contacts; Confirm radio batteries</textarea>
+          </div>
+          <p class="hint" data-diff-key="split-regex-note">Current separator regex: <strong id="regexEcho"></strong></p>
+          <div class="preview">
+            <div class="preview-head">
+              <span>Split preview</span>
+              <span id="splitCount">0 items</span>
+            </div>
+            <div id="splitPreview" class="preview-list"></div>
+          </div>
+          <div class="dialog-actions">
+            <button type="button" class="button secondary" data-close>Add nothing</button>
+            <button id="appendSplit" type="button" class="button">Append split items</button>
+          </div>
+        </section>
+      </div>
+    </div>
+  </div>
+
+  <div id="toast" class="toast" role="status" aria-live="polite">
+    <svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M20 6L9 17l-5-5"></path></svg>
+    <div><b id="toastTitle">Saved</b><span id="toastText"></span></div>
+  </div>
+
+  <script>
+    const templates = [
+      {
+        id: "home-closing",
+        title: "Home Closing Checklist",
+        items: [
+          "Turn off stove",
+          "Lock back door",
+          "Set thermostat",
+          "Check windows"
+        ]
+      },
+      {
+        id: "field-safety",
+        title: "Field Safety Inspection",
+        items: [
+          "Inspect fire extinguisher",
+          "Confirm first aid kit",
+          "Verify emergency contacts",
+          "Check radio batteries"
+        ]
+      },
+      {
+        id: "release-runbook",
+        title: "Release Runbook",
+        items: [
+          "Confirm build artifact",
+          "Review migration plan",
+          "Notify support channel"
+        ]
+      }
+    ];
+
+    const flows = {
+      new: [
+        ["Start blank", "The editor opens with an empty draft and no source dependency."],
+        ["Add items", "Single entry or the large Add items action can append AI, OCR, or split-text results."],
+        ["Save", "A new template is created once title and items are present."]
+      ],
+      duplicate: [
+        ["Choose source", "Pick an existing template, then copy its title and items into a new draft."],
+        ["Customize copy", "Add, edit, sort, or remove copied items without mutating the original template."],
+        ["Save new", "Saving writes a new template id; copied item ids should be regenerated in production."]
+      ],
+      edit: [
+        ["Load original", "Existing template content appears in the editor."],
+        ["Append or adjust", "Assisted additions append after existing items, and manual edits update the current template draft."],
+        ["Save changes", "Saving updates this template and any active session sync logic stays explicit."]
+      ]
+    };
+
+    const state = {
+      mode: "new",
+      title: "Untitled checklist",
+      items: [],
+      regex: "\\n+|[:;]|\\s+-\\s+|\\s*\\u2022\\s*",
+      activeMethod: "ai",
+      lastAddedIds: new Set()
+    };
+
+    const el = {
+      screenTitle: document.getElementById("screenTitle"),
+      sourceLabel: document.getElementById("sourceLabel"),
+      sourceHelp: document.getElementById("sourceHelp"),
+      sourceTemplate: document.getElementById("sourceTemplate"),
+      loadSource: document.getElementById("loadSource"),
+      templateTitle: document.getElementById("templateTitle"),
+      itemCount: document.getElementById("itemCount"),
+      itemList: document.getElementById("itemList"),
+      singleItemInput: document.getElementById("singleItemInput"),
+      addSingleItem: document.getElementById("addSingleItem"),
+      sortSelect: document.getElementById("sortSelect"),
+      saveButton: document.getElementById("saveButton"),
+      flowModeLabel: document.getElementById("flowModeLabel"),
+      flowList: document.getElementById("flowList"),
+      addDialog: document.getElementById("addDialog"),
+      openAddDialog: document.getElementById("openAddDialog"),
+      closeDialog: document.getElementById("closeDialog"),
+      regexInput: document.getElementById("regexInput"),
+      regexStatus: document.getElementById("regexStatus"),
+      saveRegex: document.getElementById("saveRegex"),
+      toggleSettings: document.getElementById("toggleSettings"),
+      settingsPanel: document.getElementById("settingsPanel"),
+      regexEcho: document.getElementById("regexEcho"),
+      bulkText: document.getElementById("bulkText"),
+      splitPreview: document.getElementById("splitPreview"),
+      splitCount: document.getElementById("splitCount"),
+      aiPrompt: document.getElementById("aiPrompt"),
+      aiPreview: document.getElementById("aiPreview"),
+      appendAI: document.getElementById("appendAI"),
+      appendSplit: document.getElementById("appendSplit"),
+      ocrPreview: document.getElementById("ocrPreview"),
+      appendOCR: document.getElementById("appendOCR"),
+      appendOCRSample: document.getElementById("appendOCRSample"),
+      toast: document.getElementById("toast"),
+      toastTitle: document.getElementById("toastTitle"),
+      toastText: document.getElementById("toastText")
+    };
+
+    function iconTrash() {
+      return '<svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M3 6h18"></path><path d="M8 6V4h8v2"></path><path d="M19 6l-1 14H6L5 6"></path></svg>';
+    }
+
+    function uid() {
+      return "item-" + Math.random().toString(36).slice(2, 10);
+    }
+
+    function toItem(text, added) {
+      return {
+        id: uid(),
+        text,
+        createdAt: Date.now() + Math.random(),
+        added: Boolean(added)
+      };
+    }
+
+    function copyTemplate(template, titlePrefix) {
+      state.title = titlePrefix ? `${titlePrefix} ${template.title}` : template.title;
+      state.items = template.items.map((text) => toItem(text, false));
+      state.lastAddedIds = new Set();
+      el.templateTitle.value = state.title;
+      el.sortSelect.value = "custom";
+      render();
+    }
+
+    function selectedTemplate() {
+      return templates.find((template) => template.id === el.sourceTemplate.value) || templates[0];
+    }
+
+    function setMode(mode) {
+      state.mode = mode;
+      document.querySelectorAll(".mode-tabs button").forEach((button) => {
+        button.classList.toggle("active", button.dataset.mode === mode);
+      });
+
+      if (mode === "new") {
+        state.title = "Untitled checklist";
+        state.items = [];
+        state.lastAddedIds = new Set();
+        el.templateTitle.value = state.title;
+      }
+
+      if (mode === "duplicate") {
+        copyTemplate(selectedTemplate(), "Copy of");
+      }
+
+      if (mode === "edit") {
+        copyTemplate(selectedTemplate(), "");
+      }
+
+      render();
+    }
+
+    function renderSource() {
+      const labels = {
+        new: ["Blank template draft", "Start empty, then add one item or append a generated/imported batch."],
+        duplicate: ["Duplicating from an existing template", "The selected template is copied into a new draft. Editing this draft does not affect the source."],
+        edit: ["Editing an existing template", "Changes save back to the loaded template. Assisted additions append after its current items."]
+      };
+
+      el.screenTitle.textContent = state.mode === "new"
+        ? "New Template"
+        : state.mode === "duplicate"
+          ? "Duplicate Template"
+          : "Edit Template";
+      el.sourceLabel.textContent = labels[state.mode][0];
+      el.sourceHelp.textContent = labels[state.mode][1];
+      el.sourceTemplate.disabled = state.mode === "new";
+      el.loadSource.disabled = state.mode === "new";
+      el.loadSource.textContent = state.mode === "edit" ? "Load template" : "Use source";
+      el.saveButton.textContent = state.mode === "edit" ? "Save Changes" : "Create Template";
+    }
+
+    function renderFlow() {
+      el.flowModeLabel.textContent = state.mode.charAt(0).toUpperCase() + state.mode.slice(1);
+      el.flowList.innerHTML = flows[state.mode].map((step, index) => `
+        <li>
+          <span class="step-dot">${index + 1}</span>
+          <span><b>${step[0]}</b><br>${step[1]}</span>
+        </li>
+      `).join("");
+    }
+
+    function renderItems() {
+      const count = state.items.length;
+      el.itemCount.textContent = `${count} ${count === 1 ? "item" : "items"}`;
+      if (!count) {
+        el.itemList.innerHTML = '<div class="empty">No items yet. Use the large Add items button or add one item manually.</div>';
+        return;
+      }
+
+      el.itemList.innerHTML = state.items.map((item, index) => `
+        <div class="item-row ${state.lastAddedIds.has(item.id) ? "added" : ""}" data-id="${item.id}">
+          <span class="handle" aria-hidden="true">::</span>
+          <input value="${escapeHtml(item.text)}" aria-label="Item ${index + 1}" />
+          <button type="button" class="icon-button danger-button" aria-label="Remove ${escapeHtml(item.text)}">${iconTrash()}</button>
+        </div>
+      `).join("");
+
+      el.itemList.querySelectorAll(".item-row").forEach((row) => {
+        const id = row.dataset.id;
+        row.querySelector("input").addEventListener("input", (event) => {
+          const item = state.items.find((candidate) => candidate.id === id);
+          if (item) item.text = event.target.value;
+        });
+        row.querySelector("button").addEventListener("click", () => {
+          state.items = state.items.filter((candidate) => candidate.id !== id);
+          state.lastAddedIds.delete(id);
+          renderItems();
+        });
+      });
+    }
+
+    function renderRegex() {
+      el.regexInput.value = state.regex;
+      el.regexEcho.textContent = state.regex;
+      updateSplitPreview();
+    }
+
+    function render() {
+      renderSource();
+      renderFlow();
+      renderItems();
+      renderRegex();
+    }
+
+    function escapeHtml(value) {
+      return value
+        .replaceAll("&", "&amp;")
+        .replaceAll("<", "&lt;")
+        .replaceAll(">", "&gt;")
+        .replaceAll('"', "&quot;");
+    }
+
+    function splitItems(text) {
+      const regex = new RegExp(state.regex, "g");
+      return text
+        .split(regex)
+        .map((item) => item.trim())
+        .filter(Boolean);
+    }
+
+    function validateRegex(value) {
+      try {
+        new RegExp(value, "g");
+        return null;
+      } catch (error) {
+        return error.message;
+      }
+    }
+
+    function previewList(target, items) {
+      target.innerHTML = items.length
+        ? items.map((item, index) => `<p class="preview-item" data-diff-key="${target.id}-item-${index + 1}">${escapeHtml(item)}</p>`).join("")
+        : `<p class="preview-item" data-diff-key="${target.id}-empty">No items detected yet.</p>`;
+    }
+
+    function updateSplitPreview() {
+      let items = [];
+      try {
+        items = splitItems(el.bulkText.value);
+        el.splitCount.textContent = `${items.length} ${items.length === 1 ? "item" : "items"}`;
+      } catch (error) {
+        el.splitCount.textContent = "Invalid regex";
+      }
+      previewList(el.splitPreview, items);
+    }
+
+    function aiItems() {
+      const prompt = el.aiPrompt.value.toLowerCase();
+      if (prompt.includes("release")) {
+        return ["Check rollback owner", "Confirm feature flag state", "Capture post-release notes"];
+      }
+      if (prompt.includes("home")) {
+        return ["Confirm garage is closed", "Turn off water valve", "Set entry alarm"];
+      }
+      return ["Confirm PPE availability", "Check weather conditions", "Record site entry time"];
+    }
+
+    function updateAiPreview() {
+      previewList(el.aiPreview, aiItems());
+    }
+
+    function ocrItems() {
+      return ["Scan result: Check harness label", "Scan result: Verify ladder feet", "Scan result: Log inspection photo"];
+    }
+
+    function appendItems(textItems, source) {
+      const additions = textItems.map((text) => toItem(text, true));
+      state.items = state.items.concat(additions);
+      state.lastAddedIds = new Set(additions.map((item) => item.id));
+      el.sortSelect.value = "custom";
+      renderItems();
+      closeDialog();
+      showToast("Items appended", `${additions.length} ${additions.length === 1 ? "item" : "items"} added from ${source}.`);
+    }
+
+    function openDialog(method) {
+      state.activeMethod = method || "ai";
+      el.addDialog.classList.add("open");
+      setMethod(state.activeMethod);
+    }
+
+    function closeDialog() {
+      el.addDialog.classList.remove("open");
+    }
+
+    function showMethodWithoutRendering(method) {
+      // Diff navigation uses this path after the report has marked preview rows.
+      // Switching tabs without rebuilding the list keeps those marks in place.
+      state.activeMethod = method;
+      document.querySelectorAll(".method").forEach((button) => {
+        button.classList.toggle("active", button.dataset.method === method);
+      });
+      document.querySelectorAll(".method-pane").forEach((pane) => {
+        pane.classList.toggle("open", pane.id === `pane-${method}`);
+      });
+    }
+
+    function setMethod(method) {
+      showMethodWithoutRendering(method);
+      updateAiPreview();
+      previewList(el.ocrPreview, ocrItems());
+      updateSplitPreview();
+    }
+
+    function showToast(title, text) {
+      el.toastTitle.textContent = title;
+      el.toastText.textContent = text;
+      el.toast.classList.add("show");
+      clearTimeout(showToast.timer);
+      showToast.timer = setTimeout(() => el.toast.classList.remove("show"), 2800);
+    }
+
+    function populateTemplates() {
+      el.sourceTemplate.innerHTML = templates.map((template) => (
+        `<option value="${template.id}">${escapeHtml(template.title)}</option>`
+      )).join("");
+    }
+
+    document.querySelectorAll(".mode-tabs button").forEach((button) => {
+      button.addEventListener("click", () => setMode(button.dataset.mode));
+    });
+
+    el.loadSource.addEventListener("click", () => {
+      copyTemplate(selectedTemplate(), state.mode === "duplicate" ? "Copy of" : "");
+      showToast(state.mode === "edit" ? "Template loaded" : "Source copied", selectedTemplate().title);
+    });
+
+    el.sourceTemplate.addEventListener("change", () => {
+      if (state.mode !== "new") {
+        copyTemplate(selectedTemplate(), state.mode === "duplicate" ? "Copy of" : "");
+      }
+    });
+
+    el.templateTitle.addEventListener("input", (event) => {
+      state.title = event.target.value;
+    });
+
+    el.addSingleItem.addEventListener("click", () => {
+      const text = el.singleItemInput.value.trim();
+      if (!text) return;
+      appendItems([text], "manual entry");
+      el.singleItemInput.value = "";
+    });
+
+    el.singleItemInput.addEventListener("keydown", (event) => {
+      if (event.key === "Enter") el.addSingleItem.click();
+    });
+
+    el.sortSelect.addEventListener("change", () => {
+      const sort = el.sortSelect.value;
+      if (sort === "az") state.items.sort((a, b) => a.text.localeCompare(b.text));
+      if (sort === "za") state.items.sort((a, b) => b.text.localeCompare(a.text));
+      if (sort === "newest") state.items.sort((a, b) => b.createdAt - a.createdAt);
+      renderItems();
+    });
+
+    el.openAddDialog.addEventListener("click", () => openDialog("ai"));
+    el.closeDialog.addEventListener("click", closeDialog);
+    el.addDialog.addEventListener("click", (event) => {
+      if (event.target === el.addDialog) closeDialog();
+    });
+    document.querySelectorAll("[data-close]").forEach((button) => {
+      button.addEventListener("click", closeDialog);
+    });
+
+    document.querySelectorAll(".method").forEach((button) => {
+      button.addEventListener("click", () => setMethod(button.dataset.method));
+    });
+
+    el.aiPrompt.addEventListener("input", updateAiPreview);
+    el.appendAI.addEventListener("click", () => appendItems(aiItems(), "AI"));
+
+    el.appendOCRSample.addEventListener("click", () => {
+      previewList(el.ocrPreview, ocrItems());
+      showToast("OCR placeholder", "Sample recognition result is ready to append.");
+    });
+    el.appendOCR.addEventListener("click", () => appendItems(ocrItems(), "OCR placeholder"));
+
+    el.bulkText.addEventListener("input", updateSplitPreview);
+    el.appendSplit.addEventListener("click", () => {
+      try {
+        appendItems(splitItems(el.bulkText.value), "split text");
+      } catch (error) {
+        showToast("Regex error", error.message);
+      }
+    });
+
+    el.toggleSettings.addEventListener("click", () => {
+      const isOpen = el.settingsPanel.classList.toggle("open");
+      el.toggleSettings.textContent = isOpen ? "Close" : "Open";
+    });
+
+    el.saveRegex.addEventListener("click", () => {
+      const value = el.regexInput.value;
+      const error = validateRegex(value);
+      if (error) {
+        el.regexStatus.textContent = error;
+        el.regexStatus.className = "status bad";
+        return;
+      }
+      state.regex = value;
+      el.regexStatus.textContent = "Current regex is valid.";
+      el.regexStatus.className = "status ok";
+      renderRegex();
+      showToast("Regex saved", "Split Text now uses the updated separator.");
+    });
+
+    el.saveButton.addEventListener("click", () => {
+      if (!state.title.trim() || state.items.length === 0) {
+        showToast("Cannot save yet", "Add a title and at least one item.");
+        return;
+      }
+      showToast(
+        state.mode === "edit" ? "Changes saved" : "Template created",
+        state.mode === "duplicate" ? "The original source remains unchanged." : state.title
+      );
+    });
+
+    document.addEventListener("keydown", (event) => {
+      if (event.key === "Escape" && el.addDialog.classList.contains("open")) closeDialog();
+    });
+
+    window.__renderedHtmlDiffFocus = (identity) => {
+      if (identity.startsWith("key:ocrPreview-item-")) {
+        el.addDialog.classList.add("open");
+        showMethodWithoutRendering("ocr");
+      }
+    };
+
+    populateTemplates();
+    render();
+    updateAiPreview();
+    previewList(el.ocrPreview, ocrItems());
+  </script>
+</body>
+</html>

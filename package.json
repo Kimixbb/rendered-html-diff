@@ -9,7 +9,7 @@
   "scripts": {
     "build": "tsc -p tsconfig.json",
     "typecheck": "tsc -p tsconfig.json --noEmit",
-    "test": "npm run build && node --test dist/__tests__/core.test.js",
+    "test": "npm run build && node --test dist/__tests__/core.test.js dist/__tests__/report.test.js",
     "demo": "npm run build && node dist/cli.js fixtures/before.html fixtures/after.html --out dist/demo.html",
     "flow-demo": "npm run build && node dist/cli.js fixtures/app-flow-old.html fixtures/app-flow-new.html --out dist/app-flow-demo.html",
     "rhd": "npm run build && node dist/cli.js"
