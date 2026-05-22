@@ -72,6 +72,48 @@ same label and metadata for assistive technology.
 Click focus is the durable navigation action. It is the only sidebar row
 interaction that asks the `after` frame to move.
 
+## Diff Highlights And Focus Boxes
+
+The frame bridge uses two visual layers:
+
+- **Diff highlight** shows what changed. It stays visible whether or not the
+  block is selected.
+- **Focus box** shows the one sidebar row the user selected most recently. It
+  moves when the user clicks another sidebar row.
+
+Diff highlight colors follow entry status:
+
+| Status | Block Marker | Inline Tokens | Meaning |
+| --- | --- | --- | --- |
+| Added | green | green `mark` tokens | exists only in `after` |
+| Modified | amber | red `del` and green `mark` tokens | matched block changed |
+| Deleted | red | red `del` tokens or deleted placeholder | exists only in `before` |
+
+The bridge stores status on rendered targets with `data-rhd-status`:
+
+- `+` for added
+- `~` for modified
+- `-` for deleted placeholders
+
+The selected focus box uses the same status color. This matters because added
+and modified blocks already have their own `box-shadow` for the normal diff
+marker. The selected-state CSS must be at least as specific as the base diff
+CSS, otherwise the focus halo can be overwritten and appear missing.
+
+Focus behavior by target type:
+
+- Text blocks, such as headings, paragraphs, list items, and blockquotes, get a
+  temporary full-width focus box. This makes short text changes easier to see in
+  dense reports.
+- Graphic blocks, including SVG charts and Mermaid diagrams, use the whole
+  graphic card or deleted placeholder as the focus target.
+- Code blocks and table rows keep their specialized highlighting and receive
+  the shared focus pulse when selected.
+
+Only one target should have focus styling at a time. Before a new focus marker
+is applied, the bridge removes both `rhd-focus-pulse` and `rhd-text-focus-box`
+from the previous target. The normal diff highlight remains in place.
+
 ## Frame Injection
 
 The parent injects the Mermaid runtime, bridge config, and frame bridge into each
@@ -92,3 +134,8 @@ Some input apps replace DOM nodes shortly after startup. The bridge stores the
 latest diff instructions and reapplies them after short delays. This makes
 inline diffs survive late app renders without taking away the page's normal
 interactivity.
+
+When the user clicks a sidebar row, the frame waits for the stored diff to
+reapply before finding the focus target. This is important for deleted blocks:
+deleted placeholders are removed and rebuilt during reapplication, so focusing
+too early can make a click appear to do nothing.

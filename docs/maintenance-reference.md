@@ -44,6 +44,12 @@ Template editor report:
 node dist/cli.js fixtures/template-editor-flow-before.html fixtures/template-editor-flow-after.html --out dist/template-editor-flow-diff.html
 ```
 
+Q1 financial report:
+
+```bash
+node dist/cli.js fixtures/q1-financial-report-before.html fixtures/q1-financial-report-after.html --out dist/q1-financial-report-diff.html
+```
+
 ## Files
 
 - `src/report.ts`: report template, parent runtime, frame bridge, highlighting,
@@ -91,8 +97,20 @@ When changing sidebar behavior:
 - keep row hover and keyboard focus as parent-only full-label reveal
 - do not reintroduce hover-to-frame preview messages
 - keep click focus as the durable frame navigation action
+- keep selected focus as a single active frame target
+- keep text focus boxes full-width only while selected
+- keep selected chart focus halos visible even when the chart already has an
+  added, modified, or deleted highlight
 - keep resize limits, drag behavior, and keyboard resizing documented and tested
 - use bridge messages instead of parent frame DOM access
+
+When changing chart behavior:
+
+- use `data-diff-kind="graphic"` for whole-chart matching
+- keep chart data labels compact enough to avoid collisions
+- keep SVG title, subtitle, and axis labels out of value-level diffs
+- test same-key chart type changes, added charts, and deleted charts
+- run the Q1 financial report manual check after regenerating the report
 
 ## Useful Static Checks
 
@@ -100,6 +118,12 @@ Find report bridge code in generated demos:
 
 ```bash
 rg -n "buildMergedMermaidGraphSource|isMermaidNodeGroup" dist/app-flow-demo.html
+```
+
+Find selected-focus CSS in the Q1 report:
+
+```bash
+rg -n "rhd-focus-pulse|data-rhd-status" dist/q1-financial-report-diff.html
 ```
 
 Check generated iframe sandbox policy:

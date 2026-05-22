@@ -40,8 +40,13 @@ being converted into a static preview.
 - Diffing happens after app startup, optional app readiness, a short paint
   settle delay, and Mermaid rendering.
 - Stable `data-diff-key` attributes are the preferred way to identify blocks.
+- `data-diff-kind="graphic"` marks chart-like blocks that should diff as one
+  visual unit, including SVG charts and Mermaid diagrams.
 - Mermaid graph diffs decorate graph parts, not the entire graph, whenever the
   parser can understand the flowchart source.
+- Sidebar click focus is a visible, single-target state. It uses the same color
+  as the selected diff status and must move away cleanly when another row is
+  selected.
 
 ## Glossary
 
@@ -51,8 +56,12 @@ being converted into a static preview.
   It collects rendered blocks, applies highlights, and handles focus commands.
 - **Semantic block**: a user-visible unit such as a heading, paragraph, list
   item, table row, code block, or graphic block.
-- **Graphic block**: a diff block with `data-diff-kind="graphic"`, currently
-  used for Mermaid diagrams.
+- **Graphic block**: a diff block with `data-diff-kind="graphic"`, used for SVG
+  charts, Mermaid diagrams, and other visual summaries that should be treated
+  as one rendered unit.
+- **Focus box**: the selected-state halo applied after a sidebar click. It is
+  separate from the normal diff highlight and should appear on only one target
+  at a time.
 - **Live DOM**: the DOM after the input page has run its scripts and rendered
   its startup state.
 - **Merged graph**: a temporary Mermaid source that combines the `after` graph

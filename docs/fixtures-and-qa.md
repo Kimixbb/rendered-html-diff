@@ -46,6 +46,59 @@ Purpose:
 
 Use `dist/app-flow-demo.html` for manual visual checks.
 
+## Q1 Financial Report Chart Fixtures
+
+Files:
+
+- `fixtures/q1-financial-report-before.html`
+- `fixtures/q1-financial-report-after.html`
+
+Purpose:
+
+- exercise SVG chart diffs with visible financial data changes
+- exercise Mermaid flow chart diffs in a finance operations workflow
+- exercise a same-key chart type change from pie chart to bar chart
+- exercise added and removed chart blocks alongside changed chart blocks
+- keep SVG labels compact and horizontal so chart text stays inside the card
+
+Regenerate the local report with:
+
+```bash
+node dist/cli.js fixtures/q1-financial-report-before.html fixtures/q1-financial-report-after.html --out dist/q1-financial-report-diff.html
+```
+
+The fixture pair is a fictional Q1 board report for Aurora Systems. It is meant
+to cover many chart shapes in one easy-to-scan report:
+
+| Key | Chart Or Block | Expected Status | What It Exercises |
+| --- | --- | --- | --- |
+| `chart-kpi-strip` | KPI strip | Modified | multiple SVG value changes in a wide card |
+| `chart-revenue-by-segment` | bar chart | Modified | horizontal bars and compact value labels |
+| `chart-monthly-revenue` | line chart | Modified | point labels and trend-line changes |
+| `chart-margin-by-segment` | stacked bar chart | Modified | dense adjacent bar labels |
+| `chart-pipeline-funnel` | funnel chart | Modified | polygon chart labels |
+| `chart-expense-mix` | pie chart to bar chart | Modified | same-key chart type change |
+| `chart-cash-waterfall` | waterfall chart | Modified | positive and negative cash bridge values |
+| `chart-liquidity-runway` | gauge chart | Added | green added chart block focus behavior |
+| `chart-operating-flow` | Mermaid flow chart | Modified | graph-aware node and edge changes |
+| `chart-regional-scatter` | bubble chart | Modified | leader-line labels placed away from bubbles |
+| `chart-collections-heatmap` | heatmap | Modified | compact matrix labels and value changes |
+| `chart-legacy-forecast-risk` | donut chart | Deleted | red deleted chart placeholder and focus |
+
+In the Q1 report, verify:
+
+- SVG chart value diffs render inside the graphic, using red crossed-out old
+  values and green new values.
+- Stacked chart value diffs do not cover each other.
+- Bubble chart labels stay outside the circles and remain readable.
+- Waterfall value labels do not collide with the title or subtitle.
+- Clicking a modified paragraph in the sidebar shows a full-width focus halo
+  around the text block.
+- Clicking an added, modified, or deleted chart shows a focus halo in the same
+  status color as that chart.
+- Clicking a different sidebar row removes the previous focus halo while leaving
+  the normal diff highlight in place.
+
 ## Manual QA Checklist
 
 After changing report runtime behavior:
@@ -55,6 +108,8 @@ After changing report runtime behavior:
 3. Open `dist/demo.html`.
 4. Open `dist/app-flow-demo.html`.
 5. Open `dist/template-editor-flow-diff.html`.
+6. Open `dist/q1-financial-report-diff.html` when chart, graphic, or focus
+   behavior changed.
 
 In the template editor report, verify:
 
@@ -94,6 +149,8 @@ In the app flow report, verify:
 - sidebar full-label reveal without hover-to-frame preview
 - late diff reapplication
 - code, table, and list highlighting
+- selected focus cleanup, text focus boxes, and status-colored chart focus halos
+- SVG chart value diffs and stacked SVG chart label spacing
 - Mermaid entity decoding
 - Mermaid merged graph layout
 - narrow Mermaid node matching

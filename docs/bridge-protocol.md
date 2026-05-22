@@ -91,7 +91,26 @@ Sent when a user clicks a sidebar row.
 }
 ```
 
-The frame scrolls to the rendered target and applies the focus pulse.
+The frame scrolls to the rendered target and applies the focus pulse. The focus
+handler is asynchronous because it first reapplies the latest stored diff. That
+reapplication rebuilds deleted placeholders, restores inline diffs after late
+app renders, and makes sure the focus lookup sees the same target the user sees.
+
+Focus is durable frame state. The frame remembers the selected identity and
+restores the marker after later diff reapplications. Only one rendered target
+should have `rhd-focus-pulse` at a time.
+
+Focus styling follows the target status:
+
+| Target Status | Status Attribute | Focus Color |
+| --- | --- | --- |
+| Added | `data-rhd-status="+"` | green |
+| Modified | `data-rhd-status="~"` | amber |
+| Deleted | `data-rhd-status="-"` | red |
+
+Text blocks also receive `rhd-text-focus-box` while selected. That class makes
+the focus halo span the full text block width. The class is removed when another
+sidebar item is selected.
 
 Sidebar hover, pointer hover, and keyboard focus are handled entirely inside the
 parent report. They expand the sidebar row text in place and do not send bridge

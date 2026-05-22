@@ -132,3 +132,134 @@ test("template editor flow fixtures keep visible semantic blocks keyed", () => {
   assert(beforeHtml.includes('return ["Scan result: Check harness label"'));
   assert(afterHtml.includes('return ["Check harness label"'));
 });
+
+test("Q1 financial report chart fixtures cover data and chart type changes", () => {
+  const beforeHtml = readFileSync("fixtures/q1-financial-report-before.html", "utf8");
+  const afterHtml = readFileSync("fixtures/q1-financial-report-after.html", "utf8");
+  const beforeBlocks = extractBlocksFromHtml(beforeHtml);
+  const afterBlocks = extractBlocksFromHtml(afterHtml);
+
+  // Stable keys make chart rewrites compare as changed visual blocks instead
+  // of unrelated additions and removals.
+  assert(beforeBlocks.every((block) => block.diffKey));
+  assert(afterBlocks.every((block) => block.diffKey));
+
+  const entriesByIdentity = new Map(
+    diffBlocks(beforeBlocks, afterBlocks).map((entry) => [entry.identity, entry])
+  );
+  const changedGraphicCount = [...entriesByIdentity.values()].filter(
+    (entry) => entry.kind === "graphic" && entry.status === "changed"
+  ).length;
+
+  assert(changedGraphicCount >= 7);
+  assert.equal(entriesByIdentity.get("key:chart-revenue-by-segment")?.status, "changed");
+  assert.equal(entriesByIdentity.get("key:chart-monthly-revenue")?.status, "changed");
+  assert.equal(entriesByIdentity.get("key:chart-expense-mix")?.status, "changed");
+  assert.equal(entriesByIdentity.get("key:chart-cash-waterfall")?.status, "changed");
+  assert.equal(entriesByIdentity.get("key:chart-operating-flow")?.status, "changed");
+  assert.equal(entriesByIdentity.get("key:chart-liquidity-runway")?.status, "added");
+  assert.equal(entriesByIdentity.get("key:chart-legacy-forecast-risk")?.status, "removed");
+  assert(beforeHtml.includes("Operating Expense Mix Pie Chart"));
+  assert(afterHtml.includes("Operating Expense Mix Bar Chart"));
+});
+
+test("Q1 financial report chart fixtures keep SVG labels compact", () => {
+  const fixturePaths = [
+    "fixtures/q1-financial-report-before.html",
+    "fixtures/q1-financial-report-after.html"
+  ];
+
+  for (const fixturePath of fixturePaths) {
+    const html = readFileSync(fixturePath, "utf8");
+    const chartLabelPattern = /<text\b([^>]*)>([\s\S]*?)<\/text>/gi;
+    let match: RegExpExecArray | null;
+
+    while ((match = chartLabelPattern.exec(html)) !== null) {
+      const attrs = match[1] ?? "";
+      const rawText = match[2] ?? "";
+      const className = attrs.match(/\bclass="([^"]*)"/)?.[1] ?? "";
+
+      if (!/\b(axis|label|value)\b/.test(className)) {
+        continue;
+      }
+
+      // Chart labels sit inside small plotted areas. Keeping them compact
+      // prevents the fixture from becoming a text-layout test by accident.
+      const label = rawText
+        .replace(/<[^>]+>/g, "")
+        .replace(/&amp;/g, "&")
+        .replace(/\s+/g, " ")
+        .trim();
+
+      assert(label.length <= 16, `${fixturePath} has an overlong chart label: ${label}`);
+    }
+  }
+});
+
+test("Q1 financial report after fixture keeps tight chart labels clear of marks", () => {
+  const afterHtml = readFileSync("fixtures/q1-financial-report-after.html", "utf8");
+  const scatterChart = extractFixtureGraphic(afterHtml, "chart-regional-scatter");
+  const circles = [...scatterChart.matchAll(/<circle\b([^>]*)>/gi)].map((match) => {
+    const attrs = match[1] ?? "";
+
+    return {
+      cx: numericSvgAttr(attrs, "cx"),
+      cy: numericSvgAttr(attrs, "cy"),
+      r: numericSvgAttr(attrs, "r")
+    };
+  });
+
+  const scatterLabels = [...scatterChart.matchAll(/<text\b([^>]*)>([\s\S]*?)<\/text>/gi)]
+    .map((match) => ({
+      attrs: match[1] ?? "",
+      label: (match[2] ?? "").replace(/\s+/g, " ").trim()
+    }))
+    .filter(({ attrs }) => /\bclass="(?:value|label)"/.test(attrs));
+
+  for (const { attrs, label } of scatterLabels) {
+    const x = numericSvgAttr(attrs, "x");
+    const y = numericSvgAttr(attrs, "y");
+
+    for (const circle of circles) {
+      const distanceFromCenter = Math.hypot(x - circle.cx, y - circle.cy);
+
+      assert(
+        distanceFromCenter > circle.r + 6,
+        `Bubble label "${label}" is too close to a marker`
+      );
+    }
+  }
+
+  const waterfallChart = extractFixtureGraphic(afterHtml, "chart-cash-waterfall");
+  const subtitleMatch = waterfallChart.match(/<text\b([^>]*)class="chart-subtitle"([^>]*)>/i);
+  assert(subtitleMatch);
+  const subtitleY = numericSvgAttr(`${subtitleMatch[1] ?? ""} ${subtitleMatch[2] ?? ""}`, "y");
+
+  for (const match of waterfallChart.matchAll(/<text\b([^>]*)class="value"([^>]*)>([\s\S]*?)<\/text>/gi)) {
+    const attrs = `${match[1] ?? ""} ${match[2] ?? ""}`;
+    const label = (match[3] ?? "").replace(/\s+/g, " ").trim();
+
+    assert(
+      numericSvgAttr(attrs, "y") >= subtitleY + 24,
+      `Waterfall value "${label}" is too close to the subtitle`
+    );
+  }
+});
+
+function extractFixtureGraphic(html: string, diffKey: string): string {
+  const pattern = new RegExp(
+    `<figure\\b(?=[^>]*\\bdata-diff-key="${diffKey}")[^>]*>([\\s\\S]*?)<\\/figure>`,
+    "i"
+  );
+  const match = html.match(pattern);
+
+  assert(match, `Missing fixture graphic ${diffKey}`);
+  return match[1] ?? "";
+}
+
+function numericSvgAttr(attrs: string, name: string): number {
+  const match = attrs.match(new RegExp(`\\b${name}="(-?\\d+(?:\\.\\d+)?)"`));
+
+  assert(match, `Missing numeric SVG attribute ${name}`);
+  return Number(match[1]);
+}

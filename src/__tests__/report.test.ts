@@ -124,6 +124,107 @@ test("change list entries reveal their full contents on hover and keyboard focus
   assert.doesNotMatch(bridge, /function previewIdentity\(identity\)/);
 });
 
+test("frame bridge keeps only one focused changed block active", () => {
+  const report = renderStandaloneReport({
+    beforeHtml: "<p data-diff-key=\"one\">Old one</p><p data-diff-key=\"two\">Old two</p>",
+    afterHtml: "<p data-diff-key=\"one\">New one</p><p data-diff-key=\"two\">New two</p>",
+    beforePath: "before.html",
+    afterPath: "after.html"
+  });
+  const bridge = extractFrameBridge(report);
+  const focusMatch = bridge.match(/function focusIdentity\(identity\) \{([\s\S]*?)\n  \}/);
+  const markerMatch = bridge.match(/function applyFocusMarker\(target\) \{([\s\S]*?)\n  \}/);
+
+  assert(focusMatch, "frame bridge should include focusIdentity");
+  assert(markerMatch, "frame bridge should include the shared focus marker helper");
+  assert.match(bridge, /function clearFocusedTargets\(\)/);
+  assert.match(bridge, /querySelectorAll\("\.rhd-focus-pulse"\)/);
+  assert.match(bridge, /focusedTarget\.classList\.remove\("rhd-focus-pulse"\)/);
+  assert.match(focusMatch[1]!, /applyFocusMarker\(target\)/);
+  assert.ok(
+    markerMatch[1]!.indexOf("clearFocusedTargets()") <
+      markerMatch[1]!.indexOf('target.classList.add("rhd-focus-pulse")'),
+    "previous focused blocks should be cleared before the next focus highlight is applied"
+  );
+});
+
+test("focused diff blocks use their own status color instead of a blue halo", () => {
+  const report = renderStandaloneReport({
+    beforeHtml: "<p data-diff-key=\"deleted\">Deleted copy</p>",
+    afterHtml: "<p data-diff-key=\"kept\">Kept copy</p>",
+    beforePath: "before.html",
+    afterPath: "after.html"
+  });
+  const bridge = extractFrameBridge(report);
+
+  assert.match(bridge, /placeholder\.setAttribute\("data-rhd-status", "-"\)/);
+  assert.match(bridge, /\.rhd-block-added, \[data-rhd-status="\+"\]/);
+  assert.match(bridge, /\.rhd-block-changed, \[data-rhd-status="~"\]/);
+  assert.match(bridge, /\.rhd-removed-block, \[data-rhd-status="-"\]/);
+  assert.match(bridge, /--rhd-focus-ring-color: rgba\(207, 34, 46, 0\.28\)/);
+  assert.match(bridge, /\.rhd-focus-pulse \{ box-shadow: inset 4px 0 0 var\(--rhd-marker-color, #0969da\), 0 0 0 5px var\(--rhd-focus-ring-color, rgba\(9, 105, 218, 0\.28\)\)/);
+});
+
+test("focused text blocks get a temporary wide bounding box", () => {
+  const report = renderStandaloneReport({
+    beforeHtml: "<p data-diff-key=\"copy\">Old text</p><figure data-diff-key=\"chart\" data-diff-kind=\"graphic\"><svg><text>Old chart</text></svg></figure>",
+    afterHtml: "<p data-diff-key=\"copy\">New text</p><figure data-diff-key=\"chart\" data-diff-kind=\"graphic\"><svg><text>New chart</text></svg></figure>",
+    beforePath: "before.html",
+    afterPath: "after.html"
+  });
+  const bridge = extractFrameBridge(report);
+
+  assert.match(bridge, /function shouldUseTextFocusBox\(target\)/);
+  assert.match(bridge, /target\.classList\.add\("rhd-text-focus-box"\)/);
+  assert.match(bridge, /focusedTarget\.classList\.remove\("rhd-text-focus-box"\)/);
+  assert.match(bridge, /\.rhd-focus-pulse\.rhd-text-focus-box \{[^"]*width: 100% !important; max-width: none !important/);
+  assert.match(bridge, /\.rhd-focus-pulse\.rhd-text-focus-box \{[^"]*box-shadow: inset 4px 0 0 var\(--rhd-marker-color, #0969da\), 0 0 0 5px var\(--rhd-focus-ring-color/);
+  assert.match(bridge, /TEXT_FOCUS_TAGS\.has\(target\.tagName\.toLowerCase\(\)\)/);
+  assert.doesNotMatch(bridge, /target\.getAttribute\("data-diff-kind"\) === "graphic"[\s\S]*target\.classList\.add\("rhd-text-focus-box"\)/);
+});
+
+test("focused already-highlighted chart blocks keep their selected halo", () => {
+  const report = renderStandaloneReport({
+    beforeHtml: "<p data-diff-key=\"copy\">Unchanged</p>",
+    afterHtml: "<p data-diff-key=\"copy\">Unchanged</p><figure data-diff-key=\"added-chart\" data-diff-kind=\"graphic\"><svg><text>Added chart</text></svg></figure>",
+    beforePath: "before.html",
+    afterPath: "after.html"
+  });
+  const bridge = extractFrameBridge(report);
+  const highlightedBlockRule = ".rhd-block-added:not(pre):not(tr)";
+  const focusOverrideRule = "[data-rhd-status].rhd-focus-pulse:not(pre):not(tr)";
+
+  assert.match(bridge, /\[data-rhd-status\]\.rhd-focus-pulse:not\(pre\):not\(tr\) \{[^"]*box-shadow: inset 4px 0 0 var\(--rhd-marker-color, #0969da\), 0 0 0 5px var\(--rhd-focus-ring-color/);
+  assert.ok(
+    bridge.indexOf(focusOverrideRule) > bridge.indexOf(highlightedBlockRule),
+    "the selected chart focus rule should come after the base highlighted chart rule so the halo is not overwritten"
+  );
+});
+
+test("frame bridge waits for deleted placeholders before focusing removed blocks", () => {
+  const report = renderStandaloneReport({
+    beforeHtml: "<figure data-diff-key=\"removed-chart\" data-diff-kind=\"graphic\"><svg><text>Old chart</text></svg></figure>",
+    afterHtml: "<p data-diff-key=\"kept\">Kept copy</p>",
+    beforePath: "before.html",
+    afterPath: "after.html"
+  });
+  const bridge = extractFrameBridge(report);
+  const focusMatch = bridge.match(/async function focusIdentity\(identity\) \{([\s\S]*?)\n  \}/);
+
+  assert(focusMatch, "focusIdentity should be async so deleted placeholders can be restored before focus");
+  assert.match(bridge, /if \(message\.type === "focus"\) \{\n      void focusIdentity\(message\.identity\);\n    \}/);
+  assert.match(bridge, /let focusedIdentity = null/);
+  assert.match(bridge, /focusedIdentity = identity/);
+  assert.match(bridge, /await applyStoredDiff\(\)/);
+  assert.match(bridge, /function restoreFocusedTarget\(\)/);
+  assert.match(bridge, /restoreFocusedTarget\(\)/);
+  assert.ok(
+    focusMatch[1]!.indexOf("await applyStoredDiff()") <
+      focusMatch[1]!.indexOf("target = findRenderedTarget(identity)"),
+    "deleted placeholders should be restored before the focused target is looked up again"
+  );
+});
+
 test("frame runtime is injected at the real document end, not visible source text", () => {
   const report = renderStandaloneReport({
     beforeHtml: "<p data-diff-key=\"copy\">Before</p>",
@@ -256,6 +357,67 @@ test("frame bridge marks changed Mermaid graph parts instead of the whole graph"
   assert.match(report, /\.rhd-graphic-node-added/);
   assert.match(report, /\.rhd-graphic-node-changed/);
   assert.match(report, /\.rhd-graphic-edge-added/);
+});
+
+test("frame bridge renders SVG chart value changes inside graphic blocks", () => {
+  const report = renderStandaloneReport({
+    beforeHtml: `
+      <figure data-diff-key="chart" data-diff-kind="graphic">
+        <svg viewBox="0 0 200 80">
+          <text class="chart-title" x="10" y="20">Revenue Chart</text>
+          <text class="value" x="10" y="50">$48.2M</text>
+        </svg>
+      </figure>
+    `,
+    afterHtml: `
+      <figure data-diff-key="chart" data-diff-kind="graphic">
+        <svg viewBox="0 0 200 80">
+          <text class="chart-title" x="10" y="20">Revenue Chart</text>
+          <text class="value" x="10" y="50">$52.6M</text>
+        </svg>
+      </figure>
+    `,
+    beforePath: "before.html",
+    afterPath: "after.html"
+  });
+  const bridge = extractFrameBridge(report);
+
+  assert.match(bridge, /function renderSvgChartTextDiff\(entry, doc\)/);
+  assert.match(bridge, /function collectSvgChartTextLabels\(root\)/);
+  assert.match(bridge, /function renderSvgTextDiff\(textElement, beforeText, afterText, doc\)/);
+  assert.match(bridge, /renderSvgChartTextDiff\(entry, doc\)/);
+  assert.match(report, /\.rhd-svg-text-diff/);
+  assert.match(report, /\.rhd-svg-text-removed/);
+  assert.match(report, /\.rhd-svg-text-added/);
+});
+
+test("frame bridge spaces stacked SVG chart text diffs before rendering them", () => {
+  const report = renderStandaloneReport({
+    beforeHtml: `
+      <figure data-diff-key="chart" data-diff-kind="graphic">
+        <svg viewBox="0 0 300 140">
+          <text class="value" x="160" y="60">NA 18%</text>
+          <text class="label" x="160" y="78">63% GM</text>
+        </svg>
+      </figure>
+    `,
+    afterHtml: `
+      <figure data-diff-key="chart" data-diff-kind="graphic">
+        <svg viewBox="0 0 300 140">
+          <text class="value" x="160" y="60">NA 22%</text>
+          <text class="label" x="160" y="78">66% GM</text>
+        </svg>
+      </figure>
+    `,
+    beforePath: "before.html",
+    afterPath: "after.html"
+  });
+  const bridge = extractFrameBridge(report);
+
+  assert.match(bridge, /const SVG_TEXT_DIFF_PAIR_HEIGHT = 34/);
+  assert.match(bridge, /function layoutSvgTextDiffLabels\(changedLabels\)/);
+  assert.match(bridge, /layoutSvgTextDiffLabels\(changedLabels\)/);
+  assert.match(bridge, /svgTextCoordinate\(element, "y"\)/);
 });
 
 test("frame bridge cleans Mermaid label breaks and renders graph diffs inside labels", () => {

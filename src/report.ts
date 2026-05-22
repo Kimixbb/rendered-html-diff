@@ -663,12 +663,16 @@ function escapeJsonForScript(json: string): string {
 function frameBridgeScript(): string {
   return String.raw`(() => {
   const MESSAGE_SOURCE = "rendered-html-diff";
+  const SVG_TEXT_DIFF_PAIR_HEIGHT = 34;
+  const SVG_TEXT_DIFF_COLUMN_TOLERANCE = 8;
+  const TEXT_FOCUS_TAGS = new Set(["h1", "h2", "h3", "h4", "h5", "h6", "p", "blockquote", "li"]);
   const config = window.__rhdBridgeConfig || {};
   const blockByIndex = new Map();
   let localBlocks = [];
   let diffApplied = false;
   let lastDiff = null;
   let diffReapplyTimers = [];
+  let focusedIdentity = null;
 
   if (!config.token || !config.frameId || window.__renderedHtmlDiffBridge) {
     return;
@@ -694,7 +698,7 @@ function frameBridgeScript(): string {
     }
 
     if (message.type === "focus") {
-      focusIdentity(message.identity);
+      void focusIdentity(message.identity);
     }
   });
 
@@ -1142,6 +1146,7 @@ function frameBridgeScript(): string {
     }
 
     prepareDiffLists(document);
+    restoreFocusedTarget();
   }
 
   async function applyStoredDiff() {
@@ -1231,6 +1236,7 @@ function frameBridgeScript(): string {
     }
 
     clearGraphicDiffMarks(entry.after.element);
+    renderSvgChartTextDiff(entry, doc);
 
     for (const node of afterParts.nodes.values()) {
       const beforeNode = beforeParts.nodes.get(node.id);
@@ -1260,9 +1266,178 @@ function frameBridgeScript(): string {
     }
   }
 
+  function renderSvgChartTextDiff(entry, doc) {
+    if (!entry.before.html || !entry.after.html || !entry.after.element.querySelector("svg")) {
+      return false;
+    }
+
+    const beforeRoot = parseGraphicHtml(entry.before.html, doc);
+    const expectedAfterRoot = parseGraphicHtml(entry.after.html, doc);
+    if (!beforeRoot || !expectedAfterRoot) {
+      return false;
+    }
+
+    const beforeLabels = collectSvgChartTextLabels(beforeRoot);
+    const expectedAfterLabels = collectSvgChartTextLabels(expectedAfterRoot);
+    const actualAfterLabels = collectSvgChartTextLabels(entry.after.element);
+    if (
+      beforeLabels.length === 0 ||
+      beforeLabels.length !== expectedAfterLabels.length ||
+      expectedAfterLabels.length !== actualAfterLabels.length
+    ) {
+      return false;
+    }
+
+    const changedLabels = [];
+    for (let index = 0; index < actualAfterLabels.length; index += 1) {
+      const beforeLabel = beforeLabels[index];
+      const afterLabel = expectedAfterLabels[index];
+      const actualLabel = actualAfterLabels[index];
+
+      // Reset the rendered label first so repeated diff applications stay
+      // idempotent even after a previous pass inserted tspans.
+      actualLabel.element.textContent = afterLabel.text;
+      actualLabel.element.classList.remove("rhd-svg-text-diff");
+      if (Number.isFinite(afterLabel.x)) {
+        actualLabel.element.setAttribute("x", formatSvgNumber(afterLabel.x));
+      }
+      if (Number.isFinite(afterLabel.y)) {
+        actualLabel.element.setAttribute("y", formatSvgNumber(afterLabel.y));
+      }
+
+      if (beforeLabel.text === afterLabel.text) {
+        continue;
+      }
+
+      changedLabels.push({
+        element: actualLabel.element,
+        beforeText: beforeLabel.text,
+        afterText: afterLabel.text,
+        x: afterLabel.x,
+        y: afterLabel.y
+      });
+    }
+
+    layoutSvgTextDiffLabels(changedLabels);
+    for (const label of changedLabels) {
+      renderSvgTextDiff(label.element, label.beforeText, label.afterText, doc);
+    }
+
+    return changedLabels.length > 0;
+  }
+
+  function parseGraphicHtml(html, doc) {
+    const template = doc.createElement("template");
+    template.innerHTML = String(html || "").trim();
+    return template.content.firstElementChild;
+  }
+
+  function collectSvgChartTextLabels(root) {
+    return Array.from(root.querySelectorAll("svg text"))
+      .filter(isDiffableSvgChartText)
+      .map((element) => ({
+        element,
+        text: normalizeText(svgTextContent(element)),
+        x: svgTextCoordinate(element, "x"),
+        y: svgTextCoordinate(element, "y")
+      }))
+      .filter((label) => label.text !== "");
+  }
+
+  function isDiffableSvgChartText(element) {
+    const className = String(element.getAttribute("class") || "");
+    return !hasClassName(className, "chart-title") &&
+      !hasClassName(className, "chart-subtitle") &&
+      !hasClassName(className, "axis");
+  }
+
+  function hasClassName(className, expected) {
+    return className.split(/\s+/).includes(expected);
+  }
+
+  function svgTextContent(element) {
+    const tspans = Array.from(element.querySelectorAll("tspan"));
+    if (tspans.length === 0) {
+      return element.textContent || "";
+    }
+
+    return tspans.map((tspan) => tspan.textContent || "").join(" ");
+  }
+
+  function svgTextCoordinate(element, name) {
+    const ownValue = Number.parseFloat(element.getAttribute(name) || "");
+    if (Number.isFinite(ownValue)) {
+      return ownValue;
+    }
+
+    const firstTspan = element.querySelector("tspan");
+    const tspanValue = Number.parseFloat(firstTspan?.getAttribute(name) || "");
+    return Number.isFinite(tspanValue) ? tspanValue : Number.NaN;
+  }
+
+  function layoutSvgTextDiffLabels(changedLabels) {
+    const placedLabels = [];
+    const orderedLabels = changedLabels
+      .filter((label) => Number.isFinite(label.x) && Number.isFinite(label.y))
+      .sort((left, right) => left.y - right.y || left.x - right.x);
+
+    for (const label of orderedLabels) {
+      let nextY = label.y;
+
+      for (const placed of placedLabels) {
+        if (Math.abs(placed.x - label.x) > SVG_TEXT_DIFF_COLUMN_TOLERANCE) {
+          continue;
+        }
+
+        if (nextY < placed.bottom) {
+          nextY = placed.bottom;
+        }
+      }
+
+      label.y = nextY;
+      label.element.setAttribute("y", formatSvgNumber(nextY));
+      placedLabels.push({
+        x: label.x,
+        bottom: nextY + SVG_TEXT_DIFF_PAIR_HEIGHT
+      });
+    }
+  }
+
+  function formatSvgNumber(value) {
+    return Number.isInteger(value) ? String(value) : String(Number(value.toFixed(2)));
+  }
+
+  function renderSvgTextDiff(textElement, beforeText, afterText, doc) {
+    const svgNamespace = "http://www.w3.org/2000/svg";
+    const firstTspan = textElement.querySelector("tspan");
+    const x = textElement.getAttribute("x") || firstTspan?.getAttribute("x") || "";
+    const y = textElement.getAttribute("y") || firstTspan?.getAttribute("y") || "";
+    const removed = doc.createElementNS(svgNamespace, "tspan");
+    const added = doc.createElementNS(svgNamespace, "tspan");
+
+    textElement.classList.add("rhd-svg-text-diff");
+    textElement.textContent = "";
+
+    removed.classList.add("rhd-svg-text-removed");
+    removed.textContent = beforeText;
+    added.classList.add("rhd-svg-text-added");
+    added.textContent = afterText;
+
+    if (x) {
+      removed.setAttribute("x", x);
+      added.setAttribute("x", x);
+    }
+    if (y) {
+      removed.setAttribute("y", y);
+    }
+    added.setAttribute("dy", "1.15em");
+
+    textElement.append(removed, added);
+  }
+
   function clearGraphicDiffMarks(root) {
-    root.querySelectorAll(".rhd-graphic-node-added, .rhd-graphic-node-changed, .rhd-graphic-node-removed, .rhd-graphic-edge-added, .rhd-graphic-edge-removed, .rhd-graphic-node-inline-diff").forEach((node) => {
-      node.classList.remove("rhd-graphic-node-added", "rhd-graphic-node-changed", "rhd-graphic-node-removed", "rhd-graphic-edge-added", "rhd-graphic-edge-removed", "rhd-graphic-node-inline-diff");
+    root.querySelectorAll(".rhd-graphic-node-added, .rhd-graphic-node-changed, .rhd-graphic-node-removed, .rhd-graphic-edge-added, .rhd-graphic-edge-removed, .rhd-graphic-node-inline-diff, .rhd-svg-text-diff, .rhd-svg-text-removed, .rhd-svg-text-added").forEach((node) => {
+      node.classList.remove("rhd-graphic-node-added", "rhd-graphic-node-changed", "rhd-graphic-node-removed", "rhd-graphic-edge-added", "rhd-graphic-edge-removed", "rhd-graphic-node-inline-diff", "rhd-svg-text-diff", "rhd-svg-text-removed", "rhd-svg-text-added");
     });
     root.querySelectorAll(".rhd-graphic-node-diff").forEach((node) => node.remove());
   }
@@ -1593,6 +1768,7 @@ function frameBridgeScript(): string {
     const placeholder = doc.createElement(block.tagName === "li" ? "li" : "div");
     placeholder.className = "rhd-removed-block";
     placeholder.setAttribute("data-rhd-placeholder-for", block.identity);
+    placeholder.setAttribute("data-rhd-status", "-");
 
     if (block.tagName === "li") {
       placeholder.classList.add("rhd-removed-list-item");
@@ -1726,26 +1902,59 @@ function frameBridgeScript(): string {
     return Array.from(item.children).find((child) => child.classList && child.classList.contains("rhd-list-body")) || null;
   }
 
-  function focusIdentity(identity) {
-    let target = findRenderedTarget(identity);
+  async function focusIdentity(identity) {
+    focusedIdentity = identity;
+    // Reapplying the diff rebuilds deleted placeholders. Wait for that work
+    // to finish so sidebar clicks can focus deleted charts, text, and rows.
+    await applyStoredDiff();
+    const target = findRenderedTarget(identity);
+    scheduleDiffReapply();
+
+    if (!target) {
+      clearFocusedTargets();
+      return;
+    }
 
     const customFocus = window.__renderedHtmlDiffFocus;
     if (typeof customFocus === "function") {
       customFocus(identity, target);
     }
 
-    applyStoredDiff();
-    target = findRenderedTarget(identity);
-    scheduleDiffReapply();
+    target.scrollIntoView({ behavior: "smooth", block: "center" });
+    applyFocusMarker(target);
+  }
 
-    if (!target) {
+  function clearFocusedTargets() {
+    // The sidebar represents one selected change at a time. Clearing the old
+    // focus marker keeps the blue navigation halo from looking like a diff.
+    for (const focusedTarget of document.querySelectorAll(".rhd-focus-pulse")) {
+      focusedTarget.classList.remove("rhd-focus-pulse");
+      focusedTarget.classList.remove("rhd-text-focus-box");
+    }
+  }
+
+  function restoreFocusedTarget() {
+    if (!focusedIdentity) {
       return;
     }
 
-    target.scrollIntoView({ behavior: "smooth", block: "center" });
-    target.classList.remove("rhd-focus-pulse");
+    const target = findRenderedTarget(focusedIdentity);
+    if (target) {
+      applyFocusMarker(target);
+    }
+  }
+
+  function applyFocusMarker(target) {
+    clearFocusedTargets();
+    if (shouldUseTextFocusBox(target)) {
+      target.classList.add("rhd-text-focus-box");
+    }
     void target.offsetWidth;
     target.classList.add("rhd-focus-pulse");
+  }
+
+  function shouldUseTextFocusBox(target) {
+    return TEXT_FOCUS_TAGS.has(target.tagName.toLowerCase());
   }
 
   function findRenderedTarget(identity) {
@@ -1765,8 +1974,9 @@ function frameBridgeScript(): string {
     style.id = "rhd-highlight-style";
     style.textContent = [
       ".rhd-block-added, .rhd-block-changed { box-sizing: border-box !important; border-radius: 4px !important; outline-offset: 2px !important; transition: box-shadow 160ms ease, outline-color 160ms ease !important; }",
-      ".rhd-block-added { --rhd-marker-color: #2da44e; --rhd-block-bg: #dafbe1; --rhd-outline-color: rgba(45, 164, 78, 0.7); --rhd-halo-color: rgba(45, 164, 78, 0.16); }",
-      ".rhd-block-changed { --rhd-marker-color: #9a6700; --rhd-block-bg: #fff8c5; --rhd-outline-color: rgba(154, 103, 0, 0.65); --rhd-halo-color: rgba(154, 103, 0, 0.18); }",
+      '.rhd-block-added, [data-rhd-status="+"] { --rhd-marker-color: #2da44e; --rhd-block-bg: #dafbe1; --rhd-outline-color: rgba(45, 164, 78, 0.7); --rhd-halo-color: rgba(45, 164, 78, 0.16); --rhd-focus-ring-color: rgba(45, 164, 78, 0.28); }',
+      '.rhd-block-changed, [data-rhd-status="~"] { --rhd-marker-color: #9a6700; --rhd-block-bg: #fff8c5; --rhd-outline-color: rgba(154, 103, 0, 0.65); --rhd-halo-color: rgba(154, 103, 0, 0.18); --rhd-focus-ring-color: rgba(154, 103, 0, 0.28); }',
+      '.rhd-removed-block, [data-rhd-status="-"] { --rhd-marker-color: #cf222e; --rhd-focus-ring-color: rgba(207, 34, 46, 0.28); }',
       ".rhd-block-added:not(pre):not(tr), .rhd-block-changed:not(pre):not(tr) { max-width: 100% !important; overflow-wrap: anywhere !important; background: var(--rhd-block-bg) !important; outline: 1px solid var(--rhd-outline-color) !important; box-shadow: inset 4px 0 0 var(--rhd-marker-color) !important; padding-left: max(10px, 0.65em) !important; padding-right: 6px !important; }",
       ".rhd-diff-list { padding-left: 0 !important; list-style: none !important; counter-reset: rhd-list-item !important; }",
       ".rhd-diff-list > li { display: grid !important; grid-template-columns: 2.35em minmax(0, 1fr) !important; column-gap: 0.45em !important; align-items: baseline !important; list-style: none !important; padding-left: 0 !important; }",
@@ -1802,6 +2012,9 @@ function frameBridgeScript(): string {
       ".rhd-graphic-node-removed text, .rhd-graphic-node-removed tspan, .rhd-graphic-node-removed .nodeLabel { color: #82071e !important; fill: #82071e !important; paint-order: stroke !important; stroke: #ffffff !important; stroke-width: 3px !important; text-decoration: line-through !important; }",
       ".rhd-graphic-diff-removed { color: #82071e !important; fill: #82071e !important; text-decoration: line-through !important; }",
       ".rhd-graphic-diff-added { color: #116329 !important; fill: #116329 !important; }",
+      ".rhd-svg-text-diff { paint-order: stroke !important; stroke: #ffffff !important; stroke-width: 3px !important; }",
+      ".rhd-svg-text-removed { color: #82071e !important; fill: #82071e !important; text-decoration: line-through !important; }",
+      ".rhd-svg-text-added { color: #116329 !important; fill: #116329 !important; }",
       ".rhd-mermaid-source { white-space: pre !important; overflow-x: auto !important; }",
       ".rhd-mermaid-error { border-color: rgba(207, 34, 46, 0.65) !important; background: #ffebe9 !important; color: #82071e !important; }",
       ".rhd-removed-list-text { background: transparent !important; padding: 0 !important; }",
@@ -1812,7 +2025,9 @@ function frameBridgeScript(): string {
       ".rhd-code-line-added { background: #dafbe1 !important; color: #116329 !important; }",
       ".rhd-code-line-removed { background: #ffebe9 !important; color: #82071e !important; text-decoration: line-through !important; }",
       ".rhd-code-line-same { background: transparent !important; }",
-      ".rhd-focus-pulse { box-shadow: inset 4px 0 0 var(--rhd-marker-color, #0969da), 0 0 0 5px rgba(9, 105, 218, 0.28) !important; }"
+      "[data-rhd-status].rhd-focus-pulse:not(pre):not(tr) { box-shadow: inset 4px 0 0 var(--rhd-marker-color, #0969da), 0 0 0 5px var(--rhd-focus-ring-color, rgba(9, 105, 218, 0.28)) !important; }",
+      ".rhd-focus-pulse.rhd-text-focus-box { display: block !important; width: 100% !important; max-width: none !important; box-sizing: border-box !important; border-radius: 6px !important; box-shadow: inset 4px 0 0 var(--rhd-marker-color, #0969da), 0 0 0 5px var(--rhd-focus-ring-color, rgba(9, 105, 218, 0.28)) !important; }",
+      ".rhd-focus-pulse { box-shadow: inset 4px 0 0 var(--rhd-marker-color, #0969da), 0 0 0 5px var(--rhd-focus-ring-color, rgba(9, 105, 218, 0.28)) !important; }"
     ].join("\n");
 
     doc.head.append(style);
@@ -1991,6 +2206,7 @@ function viewerScript(): string {
   const SIDEBAR_MIN_WIDTH = 280;
   const SIDEBAR_MAX_WIDTH = 560;
   const SIDEBAR_DEFAULT_WIDTH = 360;
+  const TEXT_FOCUS_TAGS = new Set(["h1", "h2", "h3", "h4", "h5", "h6", "p", "blockquote", "li"]);
   const frameBlocks = {
     before: null,
     after: null
@@ -2522,6 +2738,7 @@ function viewerScript(): string {
     const placeholder = doc.createElement(block.tagName === "li" ? "li" : "div");
     placeholder.className = "rhd-removed-block";
     placeholder.setAttribute("data-rhd-placeholder-for", block.identity);
+    placeholder.setAttribute("data-rhd-status", "-");
 
     if (block.tagName === "li") {
       placeholder.classList.add("rhd-removed-list-item");
@@ -2720,9 +2937,27 @@ function viewerScript(): string {
     }
 
     target.scrollIntoView({ behavior: "smooth", block: "center" });
-    target.classList.remove("rhd-focus-pulse");
+    applyFocusMarker(target, afterDoc);
+  }
+
+  function clearFocusedTargets(root) {
+    for (const focusedTarget of root.querySelectorAll(".rhd-focus-pulse")) {
+      focusedTarget.classList.remove("rhd-focus-pulse");
+      focusedTarget.classList.remove("rhd-text-focus-box");
+    }
+  }
+
+  function applyFocusMarker(target, root) {
+    clearFocusedTargets(root);
+    if (shouldUseTextFocusBox(target)) {
+      target.classList.add("rhd-text-focus-box");
+    }
     void target.offsetWidth;
     target.classList.add("rhd-focus-pulse");
+  }
+
+  function shouldUseTextFocusBox(target) {
+    return TEXT_FOCUS_TAGS.has(target.tagName.toLowerCase());
   }
 
   function findRenderedTarget(entry, afterDoc) {
@@ -2738,8 +2973,9 @@ function viewerScript(): string {
     style.id = "rhd-highlight-style";
     style.textContent = [
       ".rhd-block-added, .rhd-block-changed { box-sizing: border-box !important; border-radius: 4px !important; outline-offset: 2px !important; transition: box-shadow 160ms ease, outline-color 160ms ease !important; }",
-      ".rhd-block-added { --rhd-marker-color: #2da44e; --rhd-block-bg: #dafbe1; --rhd-outline-color: rgba(45, 164, 78, 0.7); --rhd-halo-color: rgba(45, 164, 78, 0.16); }",
-      ".rhd-block-changed { --rhd-marker-color: #9a6700; --rhd-block-bg: #fff8c5; --rhd-outline-color: rgba(154, 103, 0, 0.65); --rhd-halo-color: rgba(154, 103, 0, 0.18); }",
+      '.rhd-block-added, [data-rhd-status="+"] { --rhd-marker-color: #2da44e; --rhd-block-bg: #dafbe1; --rhd-outline-color: rgba(45, 164, 78, 0.7); --rhd-halo-color: rgba(45, 164, 78, 0.16); --rhd-focus-ring-color: rgba(45, 164, 78, 0.28); }',
+      '.rhd-block-changed, [data-rhd-status="~"] { --rhd-marker-color: #9a6700; --rhd-block-bg: #fff8c5; --rhd-outline-color: rgba(154, 103, 0, 0.65); --rhd-halo-color: rgba(154, 103, 0, 0.18); --rhd-focus-ring-color: rgba(154, 103, 0, 0.28); }',
+      '.rhd-removed-block, [data-rhd-status="-"] { --rhd-marker-color: #cf222e; --rhd-focus-ring-color: rgba(207, 34, 46, 0.28); }',
       ".rhd-block-added:not(pre):not(tr), .rhd-block-changed:not(pre):not(tr) { max-width: 100% !important; overflow-wrap: anywhere !important; background: var(--rhd-block-bg) !important; outline: 1px solid var(--rhd-outline-color) !important; box-shadow: inset 4px 0 0 var(--rhd-marker-color) !important; padding-left: max(10px, 0.65em) !important; padding-right: 6px !important; }",
       ".rhd-diff-list { padding-left: 0 !important; list-style: none !important; counter-reset: rhd-list-item !important; }",
       ".rhd-diff-list > li { display: grid !important; grid-template-columns: 2.35em minmax(0, 1fr) !important; column-gap: 0.45em !important; align-items: baseline !important; list-style: none !important; padding-left: 0 !important; }",
@@ -2785,7 +3021,9 @@ function viewerScript(): string {
       ".rhd-code-line-added { background: #dafbe1 !important; color: #116329 !important; }",
       ".rhd-code-line-removed { background: #ffebe9 !important; color: #82071e !important; text-decoration: line-through !important; }",
       ".rhd-code-line-same { background: transparent !important; }",
-      ".rhd-focus-pulse { box-shadow: inset 4px 0 0 var(--rhd-marker-color, #0969da), 0 0 0 5px rgba(9, 105, 218, 0.28) !important; }"
+      "[data-rhd-status].rhd-focus-pulse:not(pre):not(tr) { box-shadow: inset 4px 0 0 var(--rhd-marker-color, #0969da), 0 0 0 5px var(--rhd-focus-ring-color, rgba(9, 105, 218, 0.28)) !important; }",
+      ".rhd-focus-pulse.rhd-text-focus-box { display: block !important; width: 100% !important; max-width: none !important; box-sizing: border-box !important; border-radius: 6px !important; box-shadow: inset 4px 0 0 var(--rhd-marker-color, #0969da), 0 0 0 5px var(--rhd-focus-ring-color, rgba(9, 105, 218, 0.28)) !important; }",
+      ".rhd-focus-pulse { box-shadow: inset 4px 0 0 var(--rhd-marker-color, #0969da), 0 0 0 5px var(--rhd-focus-ring-color, rgba(9, 105, 218, 0.28)) !important; }"
     ].join("\n");
 
     doc.head.append(style);
