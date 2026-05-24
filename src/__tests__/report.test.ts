@@ -124,6 +124,61 @@ test("change list entries reveal their full contents on hover and keyboard focus
   assert.doesNotMatch(bridge, /function previewIdentity\(identity\)/);
 });
 
+test("sidebar groups changed entries under document sections", () => {
+  const report = renderStandaloneReport({
+    beforeHtml: "<h1 data-diff-key=\"overview\">Overview</h1><p data-diff-key=\"copy\">Old copy</p>",
+    afterHtml: "<h1 data-diff-key=\"overview\">Overview</h1><p data-diff-key=\"copy\">New copy</p>",
+    beforePath: "before.html",
+    afterPath: "after.html"
+  });
+
+  assert.match(report, /\.rhd-change-section/);
+  assert.match(report, /\.rhd-change-section-header/);
+  assert.match(report, /\.rhd-change-section-title/);
+  assert.match(report, /\.rhd-change-section-counts/);
+  assert.match(report, /function groupSidebarEntriesBySection\(entries\)/);
+  assert.match(report, /function sectionTitleForEntry\(entry\)/);
+  assert.match(report, /function renderSidebarSection\(group\)/);
+  assert.match(report, /changeList\.append\(renderSidebarSection\(group\)\)/);
+  assert.match(report, /sectionTitle = block\.headingPath\.length > 0 \? block\.headingPath\.join\(" \/ "\) : "Document start"/);
+});
+
+test("sidebar stays catalog-only instead of showing before and after snippets", () => {
+  const report = renderStandaloneReport({
+    beforeHtml: "<p data-diff-key=\"copy\">The old customer onboarding copy was short.</p>",
+    afterHtml: "<p data-diff-key=\"copy\">The new customer onboarding copy explains each step.</p>",
+    beforePath: "before.html",
+    afterPath: "after.html"
+  });
+
+  assert.doesNotMatch(report, /\.rhd-change-snippets/);
+  assert.doesNotMatch(report, /\.rhd-change-snippet-before/);
+  assert.doesNotMatch(report, /\.rhd-change-snippet-after/);
+  assert.doesNotMatch(report, /function appendChangedSnippets\(main, entry\)/);
+  assert.doesNotMatch(report, /beforeText\.textContent = snippetForText\(entry\.before\.text\)/);
+  assert.doesNotMatch(report, /afterText\.textContent = snippetForText\(entry\.after\.text\)/);
+});
+
+test("sidebar uses concise catalog titles for changed rows", () => {
+  const report = renderStandaloneReport({
+    beforeHtml: "<h1 data-diff-key=\"report-title\">Old title</h1><p data-diff-key=\"report-summary\">Draft package copy.</p>",
+    afterHtml: "<h1 data-diff-key=\"report-title\">New title</h1><p data-diff-key=\"report-summary\">Final package copy.</p>",
+    beforePath: "before.html",
+    afterPath: "after.html"
+  });
+
+  assert.match(report, /function sidebarTitleForEntry\(entry\)/);
+  assert.match(report, /function blockTitleForSidebar\(block\)/);
+  assert.match(report, /function humanizeDisplayKey\(value\)/);
+  assert.match(report, /function conciseSidebarText\(text, fallback\)/);
+  assert.match(report, /title\.textContent = sidebarTitleForEntry\(entry\)/);
+  assert.match(report, /if \(block\.kind === "heading"\) \{/);
+  assert.match(report, /if \(block\.identity\.startsWith\("key:"\)\) \{/);
+  assert.match(report, /return keyedTitle \|\| conciseSidebarText\(block\.text, readableKind\(block\.kind\)\)/);
+  assert.doesNotMatch(report, /title\.textContent = block \? block\.label : entry\.identity/);
+  assert.doesNotMatch(report, /headingPath\[headingPath\.length - 1\] \+ ": " \+ text/);
+});
+
 test("frame bridge keeps only one focused changed block active", () => {
   const report = renderStandaloneReport({
     beforeHtml: "<p data-diff-key=\"one\">Old one</p><p data-diff-key=\"two\">Old two</p>",

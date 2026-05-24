@@ -314,6 +314,34 @@ export function renderStandaloneReport(input: ReportInput): string {
       padding: 8px 10px 14px;
     }
 
+    .rhd-change-section {
+      margin: 0 0 12px;
+    }
+
+    .rhd-change-section-header {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) auto;
+      align-items: baseline;
+      gap: 8px;
+      padding: 7px 6px 6px;
+      color: var(--muted);
+    }
+
+    .rhd-change-section-title {
+      min-width: 0;
+      overflow-wrap: anywhere;
+      color: var(--text);
+      font-size: 12px;
+      font-weight: 700;
+    }
+
+    .rhd-change-section-counts {
+      color: var(--muted);
+      font-size: 11px;
+      font-variant-numeric: tabular-nums;
+      white-space: nowrap;
+    }
+
     .rhd-change-button {
       display: grid;
       grid-template-columns: 26px minmax(0, 1fr);
@@ -2095,10 +2123,7 @@ function frameBridgeScript(): string {
       return sectionTitle ? sectionTitle + " diagram" : displayKey + " diagram";
     }
 
-    if (headingPath.length > 0) {
-      return headingPath[headingPath.length - 1] + ": " + text;
-    }
-    return text.length <= 72 ? text : displayKey + ": " + text;
+    return text.length <= 96 ? text : displayKey + ": " + text.slice(0, 93).trimEnd() + "...";
   }
 
   function fingerprint(text) {
@@ -2883,47 +2908,186 @@ function viewerScript(): string {
       return;
     }
 
-    for (const entry of changedEntries) {
-      const block = entry.after || entry.before;
-      const button = document.createElement("button");
-      button.type = "button";
-      button.className = "rhd-change-button rhd-change-button-" + entry.status;
-
-      const badge = document.createElement("span");
-      badge.className = "rhd-status rhd-status-" + entry.status;
-      badge.textContent = statusGlyph(entry.status);
-      badge.setAttribute("aria-label", statusLabel(entry.status));
-
-      const main = document.createElement("span");
-      main.className = "rhd-change-main";
-
-      const title = document.createElement("span");
-      title.className = "rhd-change-title";
-      title.textContent = block ? block.label : entry.identity;
-
-      const meta = document.createElement("span");
-      meta.className = "rhd-change-meta";
-      meta.textContent = statusLabel(entry.status) + " " + readableKind(entry.kind) + " - " + entry.identity.replace(/^(key|section|fallback):/, "");
-
-      const fullLabel = title.textContent + "\n" + meta.textContent;
-      button.setAttribute("aria-label", title.textContent + ". " + meta.textContent);
-      main.append(title, meta);
-      button.append(badge, main);
-      button.addEventListener("mouseenter", () => setSidebarItemExpanded(button, true));
-      button.addEventListener("pointerenter", () => setSidebarItemExpanded(button, true));
-      button.addEventListener("focus", () => setSidebarItemExpanded(button, true));
-      button.addEventListener("mouseleave", () => setSidebarItemExpanded(button, false));
-      button.addEventListener("pointerleave", () => setSidebarItemExpanded(button, false));
-      button.addEventListener("blur", () => setSidebarItemExpanded(button, false));
-      button.addEventListener("click", () => {
-        setSidebarItemExpanded(button, true);
-        postToAfterFrame({
-          type: "focus",
-          identity: entry.identity
-        });
-      });
-      changeList.append(button);
+    for (const group of groupSidebarEntriesBySection(changedEntries)) {
+      changeList.append(renderSidebarSection(group));
     }
+  }
+
+  function groupSidebarEntriesBySection(entries) {
+    const groups = [];
+    const groupsByTitle = new Map();
+
+    for (const entry of entries) {
+      const sectionTitle = sectionTitleForEntry(entry);
+      let group = groupsByTitle.get(sectionTitle);
+
+      if (!group) {
+        group = {
+          title: sectionTitle,
+          counts: { added: 0, changed: 0, removed: 0 },
+          entries: []
+        };
+        groupsByTitle.set(sectionTitle, group);
+        groups.push(group);
+      }
+
+      group.entries.push(entry);
+      if (typeof group.counts[entry.status] === "number") {
+        group.counts[entry.status] += 1;
+      }
+    }
+
+    return groups;
+  }
+
+  function sectionTitleForEntry(entry) {
+    const block = entry.after || entry.before;
+    if (!block) {
+      return "Document start";
+    }
+
+    // The heading path is collected from rendered content, so the sidebar can
+    // organize rows around document sections instead of raw DOM order.
+    const sectionTitle = block.headingPath.length > 0 ? block.headingPath.join(" / ") : "Document start";
+    return sectionTitle;
+  }
+
+  function renderSidebarSection(group) {
+    const section = document.createElement("section");
+    section.className = "rhd-change-section";
+
+    const header = document.createElement("div");
+    header.className = "rhd-change-section-header";
+
+    const title = document.createElement("span");
+    title.className = "rhd-change-section-title";
+    title.textContent = group.title;
+
+    const counts = document.createElement("span");
+    counts.className = "rhd-change-section-counts";
+    counts.textContent = formatSectionCounts(group.counts);
+
+    header.append(title, counts);
+    section.append(header);
+
+    for (const entry of group.entries) {
+      section.append(renderSidebarEntry(entry));
+    }
+
+    return section;
+  }
+
+  function renderSidebarEntry(entry) {
+    const block = entry.after || entry.before;
+    const button = document.createElement("button");
+    button.type = "button";
+    button.className = "rhd-change-button rhd-change-button-" + entry.status;
+
+    const badge = document.createElement("span");
+    badge.className = "rhd-status rhd-status-" + entry.status;
+    badge.textContent = statusGlyph(entry.status);
+    badge.setAttribute("aria-label", statusLabel(entry.status));
+
+    const main = document.createElement("span");
+    main.className = "rhd-change-main";
+
+    const title = document.createElement("span");
+    title.className = "rhd-change-title";
+    title.textContent = sidebarTitleForEntry(entry);
+
+    const meta = document.createElement("span");
+    meta.className = "rhd-change-meta";
+    meta.textContent = statusLabel(entry.status) + " " + readableKind(entry.kind) + " - " + entry.identity.replace(/^(key|section|fallback):/, "");
+
+    const fullLabel = title.textContent + "\n" + meta.textContent;
+    button.setAttribute("aria-label", title.textContent + ". " + meta.textContent);
+    main.append(title, meta);
+    button.append(badge, main);
+    button.addEventListener("mouseenter", () => setSidebarItemExpanded(button, true));
+    button.addEventListener("pointerenter", () => setSidebarItemExpanded(button, true));
+    button.addEventListener("focus", () => setSidebarItemExpanded(button, true));
+    button.addEventListener("mouseleave", () => setSidebarItemExpanded(button, false));
+    button.addEventListener("pointerleave", () => setSidebarItemExpanded(button, false));
+    button.addEventListener("blur", () => setSidebarItemExpanded(button, false));
+    button.addEventListener("click", () => {
+      setSidebarItemExpanded(button, true);
+      postToAfterFrame({
+        type: "focus",
+        identity: entry.identity
+      });
+    });
+
+    return button;
+  }
+
+  function formatSectionCounts(counts) {
+    const parts = [];
+    if (counts.added > 0) {
+      parts.push("+" + counts.added);
+    }
+    if (counts.changed > 0) {
+      parts.push("~" + counts.changed);
+    }
+    if (counts.removed > 0) {
+      parts.push("-" + counts.removed);
+    }
+    return parts.length > 0 ? parts.join(" ") : "0";
+  }
+
+  function sidebarTitleForEntry(entry) {
+    const block = entry.after || entry.before;
+    return block ? blockTitleForSidebar(block) : entry.identity;
+  }
+
+  function blockTitleForSidebar(block) {
+    if (block.kind === "heading") {
+      return conciseSidebarText(block.text, "Heading");
+    }
+
+    if (block.kind === "graphic") {
+      const keyedTitle = block.identity.startsWith("key:") ? humanizeDisplayKey(block.displayKey) : "";
+      return keyedTitle || "Diagram";
+    }
+
+    if (block.kind === "code") {
+      const keyedTitle = block.identity.startsWith("key:") ? humanizeDisplayKey(block.displayKey) : "";
+      return keyedTitle || conciseSidebarText(firstNonEmptyLine(block.rawText || block.text), "Code block");
+    }
+
+    if (block.kind === "table-row") {
+      const cells = Array.isArray(block.cellTexts) ? block.cellTexts.filter(Boolean) : [];
+      return conciseSidebarText(cells.length > 0 ? cells.slice(0, 3).join(" | ") : block.text, "Table row");
+    }
+
+    if (block.identity.startsWith("key:")) {
+      const keyedTitle = humanizeDisplayKey(block.displayKey);
+      return keyedTitle || conciseSidebarText(block.text, readableKind(block.kind));
+    }
+
+    return conciseSidebarText(block.text, readableKind(block.kind));
+  }
+
+  function humanizeDisplayKey(value) {
+    const normalized = normalizeText(String(value || "")
+      .replace(/\/[a-z]+-\d+$/i, "")
+      .replace(/[-_:/]+/g, " "));
+    if (!normalized) {
+      return "";
+    }
+    return normalized.charAt(0).toUpperCase() + normalized.slice(1);
+  }
+
+  function conciseSidebarText(text, fallback) {
+    const normalized = normalizeText(text || fallback || "Changed block");
+    if (normalized.length <= 72) {
+      return normalized;
+    }
+    return normalized.slice(0, 69).trimEnd() + "...";
+  }
+
+  function firstNonEmptyLine(text) {
+    const lines = String(text || "").split(/\r?\n/);
+    return lines.find((line) => line.trim()) || "";
   }
 
   function setSidebarItemExpanded(button, expanded) {
@@ -3148,10 +3312,7 @@ function viewerScript(): string {
       return sectionTitle ? sectionTitle + " diagram" : displayKey + " diagram";
     }
 
-    if (headingPath.length > 0) {
-      return headingPath[headingPath.length - 1] + ": " + text;
-    }
-    return text.length <= 72 ? text : displayKey + ": " + text;
+    return text.length <= 96 ? text : displayKey + ": " + text.slice(0, 93).trimEnd() + "...";
   }
 
   function fingerprint(text) {

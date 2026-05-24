@@ -61,6 +61,11 @@ The sidebar supports four interactions:
 - Hover, pointer-hover, keyboard-focus, or click a changed-block row to expand
   that row in place. The expanded row shows the full sidebar label and metadata,
   with wrapping allowed for long paths or summaries.
+- Changed-block rows are grouped by their collected heading path. Each group
+  shows compact added, modified, and deleted counts for that section.
+- Row titles are catalog labels. They favor heading text, readable
+  `data-diff-key` names, and compact block summaries instead of repeating full
+  before/after content that is already visible in the rendered diff.
 - Click a changed-block row to scroll to and pulse the target in the `after`
   frame.
 
