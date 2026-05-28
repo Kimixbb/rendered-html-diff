@@ -140,6 +140,12 @@ latest diff instructions and reapplies them after short delays. This makes
 inline diffs survive late app renders without taking away the page's normal
 interactivity.
 
+The visible `after` frame also watches for app-side child and text mutations
+after startup. When a normal app click rebuilds a changed preview row, tab, list,
+or panel, the bridge waits briefly for that render to finish and reapplies the
+stored diff payload. The parent does not recompute the diff for every click; the
+frame restores the same diff instructions against the current DOM.
+
 When the user clicks a sidebar row, the frame waits for the stored diff to
 reapply before finding the focus target. This is important for deleted blocks:
 deleted placeholders are removed and rebuilt during reapplication, so focusing

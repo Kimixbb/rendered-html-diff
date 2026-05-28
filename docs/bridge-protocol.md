@@ -96,6 +96,11 @@ handler is asynchronous because it first reapplies the latest stored diff. That
 reapplication rebuilds deleted placeholders, restores inline diffs after late
 app renders, and makes sure the focus lookup sees the same target the user sees.
 
+The `after` frame also reapplies the stored diff after normal app-side DOM
+changes, such as a click handler replacing preview rows. This does not send a
+new bridge message and does not ask the parent to diff again. It uses the latest
+`apply-diff` payload already stored in the frame.
+
 Focus is durable frame state. The frame remembers the selected identity and
 restores the marker after later diff reapplications. Only one rendered target
 should have `rhd-focus-pulse` at a time.

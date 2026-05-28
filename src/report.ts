@@ -700,6 +700,9 @@ function frameBridgeScript(): string {
   let diffApplied = false;
   let lastDiff = null;
   let diffReapplyTimers = [];
+  let interactiveDiffReapplyTimer = null;
+  let applyingDiffDepth = 0;
+  let isApplyingDiff = false;
   let focusedIdentity = null;
 
   if (!config.token || !config.frameId || window.__renderedHtmlDiffBridge) {
@@ -745,6 +748,7 @@ function frameBridgeScript(): string {
     await settleFrame();
     await renderMermaidBlocks(config.frameId);
     collectAndPostBlocks();
+    observeInteractiveMutations();
   }
 
   function collectAndPostBlocks() {
@@ -1133,48 +1137,55 @@ function frameBridgeScript(): string {
   }
 
   async function applyDiff(entries, beforeBlocks, afterBlocks) {
-    document.querySelectorAll(".rhd-removed-block[data-rhd-placeholder-for]").forEach((node) => node.remove());
-    localBlocks = collectBlocks(document);
-    const currentByIdentity = new Map(localBlocks.map((block) => [block.identity, block]));
-    const afterByIdentity = currentByIdentity;
-    const inlineTasks = [];
+    applyingDiffDepth += 1;
+    isApplyingDiff = true;
+    try {
+      document.querySelectorAll(".rhd-removed-block[data-rhd-placeholder-for]").forEach((node) => node.remove());
+      localBlocks = collectBlocks(document);
+      const currentByIdentity = new Map(localBlocks.map((block) => [block.identity, block]));
+      const afterByIdentity = currentByIdentity;
+      const inlineTasks = [];
 
-    for (const entry of entries) {
-      const afterBlock = entry.after
-        ? currentByIdentity.get(entry.identity) || blockByIndex.get(entry.after.index)
-        : null;
+      for (const entry of entries) {
+        const afterBlock = entry.after
+          ? currentByIdentity.get(entry.identity) || blockByIndex.get(entry.after.index)
+          : null;
 
-      if (entry.status === "added" && afterBlock) {
-        afterBlock.element.classList.add("rhd-block-added");
-        afterBlock.element.setAttribute("data-rhd-status", "+");
-      }
-
-      if (entry.status === "changed" && entry.before && afterBlock) {
-        if (entry.kind !== "graphic") {
-          afterBlock.element.classList.add("rhd-block-changed");
+        if (entry.status === "added" && afterBlock) {
+          afterBlock.element.classList.add("rhd-block-added");
+          afterBlock.element.setAttribute("data-rhd-status", "+");
         }
-        afterBlock.element.setAttribute("data-rhd-status", "~");
-        inlineTasks.push(renderInlineDiff({
-          ...entry,
-          after: {
-            ...entry.after,
-            element: afterBlock.element
+
+        if (entry.status === "changed" && entry.before && afterBlock) {
+          if (entry.kind !== "graphic") {
+            afterBlock.element.classList.add("rhd-block-changed");
           }
-        }, document));
+          afterBlock.element.setAttribute("data-rhd-status", "~");
+          inlineTasks.push(renderInlineDiff({
+            ...entry,
+            after: {
+              ...entry.after,
+              element: afterBlock.element
+            }
+          }, document));
+        }
       }
-    }
 
-    await Promise.all(inlineTasks);
+      await Promise.all(inlineTasks);
 
-    for (const entry of entries) {
-      if (entry.status === "removed" && entry.before) {
-        const placeholder = createRemovedPlaceholder(entry.before, document);
-        insertRemovedPlaceholder(placeholder, entry.before, beforeBlocks, afterByIdentity, document);
+      for (const entry of entries) {
+        if (entry.status === "removed" && entry.before) {
+          const placeholder = createRemovedPlaceholder(entry.before, document);
+          insertRemovedPlaceholder(placeholder, entry.before, beforeBlocks, afterByIdentity, document);
+        }
       }
-    }
 
-    prepareDiffLists(document);
-    restoreFocusedTarget();
+      prepareDiffLists(document);
+      restoreFocusedTarget();
+    } finally {
+      applyingDiffDepth -= 1;
+      isApplyingDiff = applyingDiffDepth > 0;
+    }
   }
 
   async function applyStoredDiff() {
@@ -1196,6 +1207,53 @@ function frameBridgeScript(): string {
         void applyStoredDiff();
       }, delayMs));
     }
+  }
+
+  function observeInteractiveMutations() {
+    if (config.frameId !== "after") {
+      return;
+    }
+
+    const target = document.body || document.documentElement;
+    if (!target || typeof MutationObserver !== "function") {
+      return;
+    }
+
+    const observer = new MutationObserver((mutations) => {
+      if (!lastDiff || isApplyingDiff) {
+        return;
+      }
+
+      if (mutations.some(isAppContentMutation)) {
+        scheduleInteractiveDiffReapply();
+      }
+    });
+
+    observer.observe(target, {
+      childList: true,
+      subtree: true,
+      characterData: true
+    });
+  }
+
+  function isAppContentMutation(mutation) {
+    // Class and attribute changes are ignored on purpose. Diff focus pulses and
+    // app visibility toggles should not cause a loop; changed text and replaced
+    // rows are the cases where highlights need to be rebuilt.
+    return mutation.type === "childList" || mutation.type === "characterData";
+  }
+
+  function scheduleInteractiveDiffReapply() {
+    if (interactiveDiffReapplyTimer !== null) {
+      clearTimeout(interactiveDiffReapplyTimer);
+    }
+
+    // A click handler may replace several nodes in one turn. Waiting briefly
+    // lets the app finish that render, then the stored diff is applied once.
+    interactiveDiffReapplyTimer = setTimeout(() => {
+      interactiveDiffReapplyTimer = null;
+      void applyStoredDiff();
+    }, 80);
   }
 
   function clearDiffReapplyTimers() {

@@ -624,6 +624,30 @@ test("frame bridge reapplies stored inline diffs after late app rendering", () =
   assert.match(report, /setTimeout\(\(\) => \{\s+void applyStoredDiff\(\);\s+\}, delayMs\)/);
 });
 
+test("after frame reapplies stored diffs after app-side DOM mutations", () => {
+  const report = renderStandaloneReport({
+    beforeHtml: "<p data-diff-key=\"preview\">Scan result: Check harness label</p>",
+    afterHtml: "<p data-diff-key=\"preview\">Check harness label</p>",
+    beforePath: "before.html",
+    afterPath: "after.html"
+  });
+  const bridge = extractFrameBridge(report);
+
+  assert.match(bridge, /let interactiveDiffReapplyTimer = null/);
+  assert.match(bridge, /let isApplyingDiff = false/);
+  assert.match(bridge, /observeInteractiveMutations\(\)/);
+  assert.match(bridge, /function observeInteractiveMutations\(\)/);
+  assert.match(bridge, /if \(config\.frameId !== "after"\) \{/);
+  assert.match(bridge, /new MutationObserver\(\(mutations\) => \{/);
+  assert.match(bridge, /if \(!lastDiff \|\| isApplyingDiff\) \{/);
+  assert.match(bridge, /mutation\.type === "childList"/);
+  assert.match(bridge, /scheduleInteractiveDiffReapply\(\)/);
+  assert.match(bridge, /function scheduleInteractiveDiffReapply\(\)/);
+  assert.match(bridge, /interactiveDiffReapplyTimer = setTimeout\(\(\) => \{/);
+  assert.match(bridge, /void applyStoredDiff\(\)/);
+  assert.match(bridge, /observer\.observe\(target, \{\s+childList: true,\s+subtree: true,\s+characterData: true\s+\}\)/);
+});
+
 test("frame bridge preserves wrapped list-item bodies when reapplying inline diffs", () => {
   const report = renderStandaloneReport({
     beforeHtml: "<ul><li data-diff-key=\"item\">Updated folders.</li></ul>",
