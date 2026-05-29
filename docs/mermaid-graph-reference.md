@@ -20,6 +20,32 @@ The bridge also supports:
 </code>
 ```
 
+## Direct Source Rendering
+
+Agent-authored HTML should render Mermaid when the source file is opened
+directly. Keep the graph source in the document, mark it with
+`data-diff-kind="graphic"`, and load the source renderer near the end of the
+body:
+
+```html
+<pre class="mermaid" data-diff-key="flow" data-diff-kind="graphic">
+flowchart LR
+  A["Start"] --> B["Finish"]
+</pre>
+<script src="mermaid-source-render.js"></script>
+```
+
+The repo helper first tries the local Mermaid package at
+`../node_modules/mermaid/dist/mermaid.min.js`, then falls back to
+`https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.min.js`. It calls
+`mermaid.render()` and replaces each source block with an SVG container while
+copying the original `data-diff-key` and `data-diff-kind` attributes.
+
+The helper must stay inert inside rendered-html-diff reports. It checks
+`window.__rhdBridgeConfig` and `window.__renderedHtmlDiffBridge` before it
+loads Mermaid, so the report bridge can collect and render the original source
+itself. Agents that inline their own helper should keep the same guard.
+
 ## Render Flow
 
 For each Mermaid block, the frame bridge:

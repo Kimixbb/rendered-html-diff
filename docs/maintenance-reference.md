@@ -35,8 +35,13 @@ npm run flow-demo
 Custom report:
 
 ```bash
+npm run rhd -- changed.html --out diff.html
 npm run rhd -- before.html after.html --out diff.html
 ```
+
+One input file compares Git `HEAD` with the working tree copy. Two input files
+keep the explicit before/after workflow for generated fixtures or archived
+HTML snapshots.
 
 Template editor report:
 
@@ -55,9 +60,10 @@ node dist/cli.js fixtures/q1-financial-report-before.html fixtures/q1-financial-
 - `src/report.ts`: report template, parent runtime, frame bridge, highlighting,
   Mermaid rendering, and sidebar behavior.
 - `src/core.ts`: non-executing extraction, diffing, and sanitization helpers.
-- `src/cli.ts`: CLI entrypoint.
+- `src/cli.ts`: CLI entrypoint and input loading for Git or explicit files.
 - `src/__tests__/report.test.ts`: generated report runtime tests.
 - `src/__tests__/core.test.ts`: core model tests.
+- `src/__tests__/cli.test.ts`: CLI parser and Git input loading tests.
 - `fixtures/`: comparison fixtures.
 - `dist/`: generated local reports for manual QA.
 

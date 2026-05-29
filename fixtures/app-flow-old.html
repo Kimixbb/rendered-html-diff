@@ -74,6 +74,13 @@
       font: 13px/1.5 "SFMono-Regular", Consolas, "Liberation Mono", monospace;
       white-space: pre;
     }
+
+    .graph-panel svg {
+      display: block;
+      width: 100%;
+      max-width: 100%;
+      height: auto;
+    }
   </style>
 </head>
 <body>
@@ -128,5 +135,6 @@ flowchart LR
       <p data-diff-key="runtime-flow-caption">The draft names the browser pieces, but it does not explain the actual sequence of parsing blocks, matching identities, applying highlights, and scrolling from the side panel.</p>
     </section>
   </main>
+  <script src="mermaid-source-render.js"></script>
 </body>
 </html>
