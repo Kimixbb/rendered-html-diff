@@ -17,7 +17,7 @@ npm run rhd -- before.html after.html --out diff.html
 ```
 
 With one input file, the CLI reads the before side from Git `HEAD` and the
-after side from your working tree. Use two input files when you already have
-separate before and after HTML files.
+after side from your working tree. The file must already exist in `HEAD`; use
+two input files for brand-new HTML files or archived before/after snapshots.
 
 The MVP is intentionally narrow: static HTML in, standalone visual diff report out. Stable `data-diff-key` attributes make the output much cleaner, especially for agent-generated coding reports.

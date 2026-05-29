@@ -39,9 +39,9 @@ npm run rhd -- changed.html --out diff.html
 npm run rhd -- before.html after.html --out diff.html
 ```
 
-One input file compares Git `HEAD` with the working tree copy. Two input files
-keep the explicit before/after workflow for generated fixtures or archived
-HTML snapshots.
+One input file compares Git `HEAD` with the working tree copy. The file must
+already exist in `HEAD`; use two input files for brand-new HTML files,
+generated fixtures, or archived HTML snapshots.
 
 Template editor report:
 

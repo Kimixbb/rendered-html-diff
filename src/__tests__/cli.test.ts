@@ -69,6 +69,38 @@ test("loadReportInput reads Git HEAD as before and the working tree as after", a
   assert.equal(input.afterPath, "reports/page.html");
 });
 
+test("loadReportInput rejects one-file Git diffs for files missing from HEAD", async () => {
+  const workspace = mkdtempSync(path.join(tmpdir(), "rhd-cli-new-file-"));
+  const pagePath = path.join(workspace, "reports", "new-page.html");
+
+  mkdirSync(path.dirname(pagePath), { recursive: true });
+  runGit(workspace, "init");
+  runGit(workspace, "config", "user.email", "test@example.com");
+  runGit(workspace, "config", "user.name", "Rendered HTML Diff Test");
+
+  // Commit any file so HEAD exists, then create an HTML file that is only in
+  // the working tree. One-file mode should not silently compare it to empty.
+  writeFileSync(path.join(workspace, "README.md"), "# Test repo\n", "utf8");
+  runGit(workspace, "add", "README.md");
+  runGit(workspace, "commit", "-m", "Add baseline readme");
+  writeFileSync(
+    pagePath,
+    "<h1 data-diff-key=\"title\">Brand new report</h1>",
+    "utf8"
+  );
+
+  await assert.rejects(
+    () => loadReportInput(
+      {
+        kind: "git-file",
+        filePath: "reports/new-page.html"
+      },
+      workspace
+    ),
+    /does not exist in Git HEAD/
+  );
+});
+
 test("one-file CLI mode renders a rich software change report from mocked Git changes", () => {
   const workspace = mkdtempSync(path.join(tmpdir(), "rhd-cli-software-report-"));
   const reportFileName = "software-delivery-change-report.html";

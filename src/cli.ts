@@ -129,12 +129,14 @@ async function loadGitReportInput(input: GitFileInput, cwd: string): Promise<Rep
     readWorkingTreeFile(filePath)
   ]);
 
-  if (beforeHtml === null && afterHtml === null) {
-    throw new Error(`Could not read ${gitPath} from Git HEAD or the working tree.`);
+  if (beforeHtml === null) {
+    throw new Error(
+      `${gitPath} does not exist in Git HEAD. Commit a baseline first, or pass explicit before and after HTML files.`
+    );
   }
 
   return {
-    beforeHtml: beforeHtml ?? "",
+    beforeHtml,
     afterHtml: afterHtml ?? "",
     beforePath: `${gitPath} (HEAD)`,
     afterPath: gitPath
@@ -145,8 +147,8 @@ async function readGitHeadFile(repoRoot: string, gitPath: string): Promise<strin
   try {
     return await runGit(["show", `HEAD:${gitPath}`], repoRoot);
   } catch {
-    // A missing file in HEAD means Git sees this as a new file. Returning empty
-    // HTML lets the report mark all semantic blocks as additions.
+    // Callers decide how to handle a missing baseline. One-file mode needs a
+    // committed before version, so it turns this into a clear usage error.
     return null;
   }
 }
