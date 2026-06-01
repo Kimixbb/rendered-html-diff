@@ -6,14 +6,25 @@ The bridge collects user-visible semantic blocks from the live DOM. Current bloc
 selectors are:
 
 - `data-diff-kind="graphic"`
+- `data-diff-key`
 - `h1`, `h2`, `h3`, `h4`, `h5`, `h6`
 - `p`
 - `li`
 - `pre`
 - `blockquote`
 - `tr`
+- `footer`, `header`, `main`, `article`, `section`
+- `figure`, `figcaption`, `img`, `svg`, `canvas`
+- `button`, `label`, `summary`, `dt`, `dd`
 
-Hidden elements and elements inside hidden ancestors are skipped.
+Hidden elements and elements inside hidden ancestors are skipped. The bridge
+checks both the `hidden` attribute and computed `display: none`,
+`visibility: hidden`, and `visibility: collapse`.
+
+Some container tags are collected only when they carry `data-diff-key`, have
+their own visible text or media, or contain content that would otherwise be
+missed. This prevents ordinary layout wrappers from duplicating the child
+paragraphs, rows, figures, or controls that are already collected.
 
 ## Block Fields
 
@@ -26,6 +37,11 @@ Each serialized block includes:
 - `text`: normalized visible text.
 - `rawText`: raw source text for code and graphics.
 - `cellTexts`: normalized table cell values for rows.
+- `comparisonSignature`: rendered visual signature for style, geometry, media,
+  text rendering, and table structure.
+- `matchGroup`: fallback group used when an unkeyed block's text changes enough
+  to change its identity fingerprint.
+- `matchIndex`: block position inside `matchGroup`.
 - `headingPath`: heading context at collection time.
 - `index`: collection order.
 - `html`: rendered outer HTML snapshot.
@@ -41,6 +57,11 @@ Identity is chosen in this order:
 2. Nearest usable ancestor key plus tag name and count.
 3. Fallback using tag name, heading path, and text fingerprint.
 
+Fallback blocks also store `matchGroup` and `matchIndex`. If their exact
+fingerprint identity does not match, the parent tries the group and index before
+classifying the blocks as unrelated additions and removals. This makes large
+text rewrites in the same rendered position show as changed more often.
+
 Use direct `data-diff-key` for important generated content. It gives the most
 stable diffs and avoids churn when surrounding layout changes.
 
@@ -49,9 +70,11 @@ stable diffs and avoids churn when surrounding layout changes.
 The parent compares `before` and `after` blocks by identity:
 
 - `added`: only exists in `after`.
-- `changed`: exists in both, but normalized text differs.
+- `changed`: exists in both, but normalized text or `comparisonSignature`
+  differs.
 - `removed`: only exists in `before`.
-- `unchanged`: exists in both with the same normalized text.
+- `unchanged`: exists in both with the same normalized text and rendered
+  comparison signature.
 
 Only added, changed, and removed entries are shown in the sidebar.
 
@@ -64,6 +87,22 @@ Rendered blocks also receive a compact status attribute in the `after` frame:
 That status is used for focus colors as well as normal diff styling. If a
 visual bug makes selected items look unselected, check whether a more specific
 status highlight rule is overriding the focus box-shadow.
+
+## Rendered Comparison Signatures
+
+`comparisonSignature` is a compact rendered fingerprint, not a source checksum.
+It intentionally catches visible changes that do not alter normalized text:
+
+- computed style fields such as color, font, margin, padding, border, display,
+  position, transform, vertical alignment, text alignment, width, and height
+- rounded `getBoundingClientRect()` geometry
+- rendered text-node style and geometry for important descendants
+- media data for images, SVG, and canvas sizing
+- table cell count, spans, text, styles, and geometry
+
+The signature does not make the report a full source diff. Script source,
+hidden text, `href`, ARIA, `title`, `class`, and `style` changes only appear
+when they affect the rendered visible block signature.
 
 ## Inline Diff Renderers
 
@@ -115,8 +154,10 @@ markup before rebuilding it. This keeps late-render reapplication idempotent.
 
 ## Table Handling
 
-Table rows are matched as blocks. When a row changes, each cell is compared by
-index. Only cells with changed normalized text receive cell-level highlighting.
+Table rows are matched as blocks. The row signature includes cell count, spans,
+cell text, styles, and geometry. When a row changes, each cell is compared by
+index. Cells with changed normalized text receive word-level highlighting, while
+style-only or structure-only row changes still mark the row as modified.
 
 ## Code Handling
 

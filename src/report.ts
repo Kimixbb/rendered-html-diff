@@ -693,7 +693,86 @@ function frameBridgeScript(): string {
   const MESSAGE_SOURCE = "rendered-html-diff";
   const SVG_TEXT_DIFF_PAIR_HEIGHT = 34;
   const SVG_TEXT_DIFF_COLUMN_TOLERANCE = 8;
-  const TEXT_FOCUS_TAGS = new Set(["h1", "h2", "h3", "h4", "h5", "h6", "p", "blockquote", "li"]);
+  const BLOCK_SELECTOR = [
+    "[data-diff-kind='graphic']",
+    "[data-diff-key]",
+    "h1",
+    "h2",
+    "h3",
+    "h4",
+    "h5",
+    "h6",
+    "p",
+    "li",
+    "pre",
+    "blockquote",
+    "tr",
+    "footer",
+    "header",
+    "main",
+    "article",
+    "section",
+    "figure",
+    "figcaption",
+    "img",
+    "svg",
+    "canvas",
+    "button",
+    "label",
+    "summary",
+    "dt",
+    "dd"
+  ].join(",");
+  const TEXT_FOCUS_TAGS = new Set(["h1", "h2", "h3", "h4", "h5", "h6", "p", "blockquote", "li", "footer", "header", "figcaption", "button", "label", "summary", "dt", "dd"]);
+  const WRAPPER_ONLY_TAGS = new Set(["main", "article", "section", "header", "footer", "figure"]);
+  const MEDIA_BLOCK_TAGS = new Set(["img", "svg", "canvas", "figure"]);
+  const TEXT_STYLE_SELECTOR = "h1,h2,h3,h4,h5,h6,p,li,blockquote,figcaption,button,label,summary,dt,dd,td,th,text,tspan";
+  const STYLE_SIGNATURE_PROPERTIES = [
+    "color",
+    "background-color",
+    "font-family",
+    "font-size",
+    "font-weight",
+    "font-style",
+    "line-height",
+    "letter-spacing",
+    "text-align",
+    "text-decoration-line",
+    "display",
+    "position",
+    "float",
+    "clear",
+    "vertical-align",
+    "white-space",
+    "width",
+    "height",
+    "min-width",
+    "min-height",
+    "max-width",
+    "max-height",
+    "margin-top",
+    "margin-right",
+    "margin-bottom",
+    "margin-left",
+    "padding-top",
+    "padding-right",
+    "padding-bottom",
+    "padding-left",
+    "border-top-width",
+    "border-right-width",
+    "border-bottom-width",
+    "border-left-width",
+    "border-top-style",
+    "border-right-style",
+    "border-bottom-style",
+    "border-left-style",
+    "border-top-color",
+    "border-right-color",
+    "border-bottom-color",
+    "border-left-color",
+    "transform"
+  ];
+  const SVG_VISUAL_ATTRIBUTES = ["viewBox", "x", "y", "x1", "y1", "x2", "y2", "cx", "cy", "r", "rx", "ry", "width", "height", "d", "points", "fill", "stroke", "stroke-width", "transform"];
   const config = window.__rhdBridgeConfig || {};
   const blockByIndex = new Map();
   let localBlocks = [];
@@ -1040,39 +1119,33 @@ function frameBridgeScript(): string {
   }
 
   function collectBlocks(doc) {
-    const selector = "[data-diff-kind='graphic'],h1,h2,h3,h4,h5,h6,p,li,pre,blockquote,tr";
-    const elements = Array.from((doc.body || doc).querySelectorAll(selector));
+    const elements = Array.from((doc.body || doc).querySelectorAll(BLOCK_SELECTOR));
     const headingPath = [];
     const sectionCounts = new Map();
+    const fallbackCounts = new Map();
     const blocks = [];
     blockByIndex.clear();
 
     for (const element of elements) {
-      if (element.hidden || element.closest("[hidden]")) {
+      if (!shouldCollectBlockElement(element)) {
         continue;
       }
 
       const tagName = element.tagName.toLowerCase();
       const isGraphicBlock = element.getAttribute("data-diff-kind") === "graphic";
-      const graphicAncestor = element.closest("[data-diff-kind='graphic']");
-      if (!isGraphicBlock && graphicAncestor) {
-        continue;
-      }
-
-      if (tagName !== "pre" && element.closest("pre")) {
-        continue;
-      }
-
       const kind = isGraphicBlock ? "graphic" : kindForTag(tagName);
       const rawText = extractRawText(element, tagName);
       const text = kind === "code" ? trimTrailingNewlines(rawText) : normalizeText(rawText);
+      const explicitKey = cleanKey(element.getAttribute("data-diff-key"));
 
-      if (!text) {
+      if (!text && !explicitKey && !hasMediaContent(element, tagName)) {
         continue;
       }
 
-      const explicitKey = cleanKey(element.getAttribute("data-diff-key"));
       const ancestorKey = explicitKey ? "" : nearestAncestorKey(element);
+      const comparisonSignature = comparisonSignatureForBlock(element, tagName, kind);
+      let matchGroup = "";
+      let matchIndex = 0;
       let identity;
       let displayKey;
 
@@ -1085,7 +1158,12 @@ function frameBridgeScript(): string {
         sectionCounts.set(countKey, nextCount);
         identity = "section:" + ancestorKey + ":" + tagName + ":" + nextCount;
         displayKey = ancestorKey + "/" + tagName + "-" + nextCount;
+        matchGroup = "section:" + ancestorKey + ":" + tagName;
+        matchIndex = nextCount;
       } else {
+        matchGroup = "fallback:" + tagName + ":" + headingPath.join(">");
+        matchIndex = (fallbackCounts.get(matchGroup) || 0) + 1;
+        fallbackCounts.set(matchGroup, matchIndex);
         identity = "fallback:" + tagName + ":" + headingPath.join(">") + ":" + fingerprint(text);
         displayKey = tagName + " fallback";
       }
@@ -1100,6 +1178,9 @@ function frameBridgeScript(): string {
         text,
         rawText,
         cellTexts: tagName === "tr" ? Array.from(element.children).map((cell) => normalizeText(cell.textContent || "")) : [],
+        comparisonSignature,
+        matchGroup,
+        matchIndex,
         headingPath: headingPath.slice(),
         index: blocks.length,
         html: element.outerHTML,
@@ -1120,6 +1201,194 @@ function frameBridgeScript(): string {
     return blocks;
   }
 
+  function shouldCollectBlockElement(element) {
+    if (isRenderedHidden(element)) {
+      return false;
+    }
+
+    const tagName = element.tagName.toLowerCase();
+    const isGraphicBlock = element.getAttribute("data-diff-kind") === "graphic";
+    const graphicAncestor = element.closest("[data-diff-kind='graphic']");
+    if (!isGraphicBlock && graphicAncestor) {
+      return false;
+    }
+
+    if (tagName !== "pre" && element.closest("pre")) {
+      return false;
+    }
+
+    return !isWrapperOnlyBlock(element);
+  }
+
+  function isRenderedHidden(element) {
+    if (element.hidden || element.closest("[hidden]")) {
+      return true;
+    }
+
+    let current = element;
+    while (current) {
+      const style = getComputedStyle(current);
+      if (
+        style.display === "none" ||
+        style.visibility === "hidden" ||
+        style.visibility === "collapse"
+      ) {
+        return true;
+      }
+      current = current.parentElement;
+    }
+
+    return false;
+  }
+
+  function isWrapperOnlyBlock(element) {
+    const tagName = element.tagName.toLowerCase();
+    if (cleanKey(element.getAttribute("data-diff-key")) || !WRAPPER_ONLY_TAGS.has(tagName)) {
+      return false;
+    }
+
+    if (hasOwnVisibleText(element)) {
+      return false;
+    }
+
+    // Layout containers often wrap blocks that are already collected. Skipping
+    // those wrappers keeps the sidebar focused on the visible content unit.
+    return Boolean(element.querySelector(BLOCK_SELECTOR));
+  }
+
+  function hasOwnVisibleText(element) {
+    return Array.from(element.childNodes).some((node) => {
+      return node.nodeType === Node.TEXT_NODE && normalizeText(node.textContent || "") !== "";
+    });
+  }
+
+  function hasMediaContent(element, tagName) {
+    return MEDIA_BLOCK_TAGS.has(tagName) || Boolean(element.querySelector("img,svg,canvas"));
+  }
+
+  function comparisonSignatureForBlock(element, tagName, kind) {
+    // Text is still the primary diff signal. This signature adds the rendered
+    // visual facts that users notice when the words stay the same.
+    const parts = [
+      "kind:" + kind,
+      "style:" + renderedStyleSignature(element),
+      "rect:" + renderedGeometrySignature(element),
+      mediaSignatureForBlock(element, tagName),
+      tableCellStructureSignature(element),
+      descendantTextStyleSignature(element)
+    ];
+
+    return parts.filter(Boolean).join("|");
+  }
+
+  function renderedStyleSignature(element) {
+    const style = getComputedStyle(element);
+    return STYLE_SIGNATURE_PROPERTIES
+      .map((property) => property + ":" + style.getPropertyValue(property))
+      .join(";");
+  }
+
+  function renderedGeometrySignature(element) {
+    const rect = element.getBoundingClientRect();
+    return [
+      "left:" + roundCssPixel(rect.left),
+      "top:" + roundCssPixel(rect.top),
+      "width:" + roundCssPixel(rect.width),
+      "height:" + roundCssPixel(rect.height)
+    ].join(",");
+  }
+
+  function roundCssPixel(value) {
+    return Math.round(value);
+  }
+
+  function descendantTextStyleSignature(element) {
+    const candidates = [];
+    if (element.matches(TEXT_STYLE_SELECTOR)) {
+      candidates.push(element);
+    }
+    candidates.push(...Array.from(element.querySelectorAll(TEXT_STYLE_SELECTOR)));
+
+    return "text-style:" + candidates
+      .filter((candidate) => !isRenderedHidden(candidate))
+      .slice(0, 40)
+      .map((candidate, index) => {
+        return [
+          index,
+          candidate.tagName.toLowerCase(),
+          normalizeText(candidate.textContent || "").slice(0, 80),
+          renderedStyleSignature(candidate),
+          renderedGeometrySignature(candidate)
+        ].join(":");
+      })
+      .join("/");
+  }
+
+  function mediaSignatureForBlock(element, tagName) {
+    const signatures = [];
+    const images = tagName === "img" ? [element] : Array.from(element.querySelectorAll("img"));
+    const svgs = tagName === "svg" ? [element] : Array.from(element.querySelectorAll("svg"));
+    const canvases = tagName === "canvas" ? [element] : Array.from(element.querySelectorAll("canvas"));
+
+    signatures.push(...images.map(imageSignature));
+    signatures.push(...svgs.map(svgVisualSignature));
+    signatures.push(...canvases.map(canvasSignature));
+
+    return signatures.length > 0 ? "media:" + signatures.join("/") : "";
+  }
+
+  function imageSignature(image) {
+    return [
+      "img",
+      image.currentSrc || "",
+      image.getAttribute("src") || "",
+      image.getAttribute("srcset") || "",
+      image.getAttribute("sizes") || "",
+      image.naturalWidth || 0,
+      image.naturalHeight || 0
+    ].join(":");
+  }
+
+  function svgVisualSignature(svg) {
+    const nodes = [svg, ...Array.from(svg.querySelectorAll("*"))].slice(0, 120);
+    return "svg:" + nodes.map((node) => {
+      return [
+        node.tagName.toLowerCase(),
+        SVG_VISUAL_ATTRIBUTES
+          .map((name) => name + "=" + (node.getAttribute(name) || ""))
+          .join(",")
+      ].join("[");
+    }).join(";");
+  }
+
+  function canvasSignature(canvas) {
+    return [
+      "canvas",
+      canvas.getAttribute("width") || "",
+      canvas.getAttribute("height") || "",
+      canvas.width || 0,
+      canvas.height || 0
+    ].join(":");
+  }
+
+  function tableCellStructureSignature(element) {
+    if (element.tagName.toLowerCase() !== "tr") {
+      return "";
+    }
+
+    return "cells:" + Array.from(element.children).map((cell, index) => {
+      return [
+        index,
+        cell.tagName.toLowerCase(),
+        cell.colSpan,
+        cell.rowSpan,
+        normalizeText(cell.textContent || ""),
+        renderedStyleSignature(cell),
+        renderedGeometrySignature(cell)
+      ].join(":");
+    }).join("/");
+  }
+
   function serializeBlock(block) {
     return {
       identity: block.identity,
@@ -1129,6 +1398,9 @@ function frameBridgeScript(): string {
       text: block.text,
       rawText: block.rawText,
       cellTexts: block.cellTexts,
+      comparisonSignature: block.comparisonSignature,
+      matchGroup: block.matchGroup,
+      matchIndex: block.matchIndex,
       headingPath: block.headingPath,
       index: block.index,
       html: block.html,
@@ -2172,6 +2444,9 @@ function frameBridgeScript(): string {
     if (tagName === "tr") {
       return "table-row";
     }
+    if (tagName === "img" || tagName === "svg" || tagName === "canvas" || tagName === "figure") {
+      return "graphic";
+    }
     return "paragraph";
   }
 
@@ -2289,6 +2564,8 @@ function viewerScript(): string {
   const SIDEBAR_MIN_WIDTH = 280;
   const SIDEBAR_MAX_WIDTH = 560;
   const SIDEBAR_DEFAULT_WIDTH = 360;
+  const COMPARISON_VIEWPORT_WIDTH = 1024;
+  const COMPARISON_VIEWPORT_HEIGHT = 768;
   const TEXT_FOCUS_TAGS = new Set(["h1", "h2", "h3", "h4", "h5", "h6", "p", "blockquote", "li"]);
   const frameBlocks = {
     before: null,
@@ -2306,8 +2583,9 @@ function viewerScript(): string {
   setupSidebarResize();
 
   window.addEventListener("message", handleFrameMessage);
-  beforeIframe.srcdoc = createFrameHtml(data.beforeHtml, "before");
-  iframe.srcdoc = createFrameHtml(data.afterHtml, "after");
+  const comparisonViewport = syncComparisonViewport();
+  beforeIframe.srcdoc = createFrameHtml(data.beforeHtml, "before", comparisonViewport);
+  iframe.srcdoc = createFrameHtml(data.afterHtml, "after", comparisonViewport);
 
   function setupSidebarToggle() {
     if (!shell || !sidebarToggle) {
@@ -2424,6 +2702,21 @@ function viewerScript(): string {
     return Math.round(Math.min(SIDEBAR_MAX_WIDTH, Math.max(SIDEBAR_MIN_WIDTH, width)));
   }
 
+  function syncComparisonViewport() {
+    const visibleRect = iframe.getBoundingClientRect();
+    const width = Math.round(visibleRect.width) || COMPARISON_VIEWPORT_WIDTH;
+    const height = Math.round(visibleRect.height) || COMPARISON_VIEWPORT_HEIGHT;
+    const comparisonViewport = { width, height };
+
+    // The before frame is off-screen, but its internal viewport still affects
+    // media queries and layout. Matching the visible frame keeps geometry
+    // signatures comparable instead of comparing two different render sizes.
+    beforeIframe.style.width = comparisonViewport.width + "px";
+    beforeIframe.style.height = comparisonViewport.height + "px";
+
+    return comparisonViewport;
+  }
+
   function handleFrameMessage(event) {
     const message = event.data;
     if (!message || message.source !== "rendered-html-diff" || message.token !== frameToken) {
@@ -2481,10 +2774,11 @@ function viewerScript(): string {
     }, "*");
   }
 
-  function createFrameHtml(html, frameId) {
+  function createFrameHtml(html, frameId, comparisonViewport) {
     const configScript = "window.__rhdBridgeConfig = " + JSON.stringify({
       token: frameToken,
-      frameId
+      frameId,
+      comparisonViewport
     }) + ";";
     const injection = [
       scriptTag(mermaidRuntime),
@@ -2646,19 +2940,17 @@ function viewerScript(): string {
   }
 
   function diffBlocks(beforeBlocks, afterBlocks) {
-    const buckets = new Map();
-    for (const block of beforeBlocks) {
-      if (!buckets.has(block.identity)) {
-        buckets.set(block.identity, []);
-      }
-      buckets.get(block.identity).push(block);
-    }
-
+    const identityBuckets = bucketBlocksBy(beforeBlocks, (block) => block.identity);
+    // Unkeyed fallback identities contain text fingerprints. Match group plus
+    // index lets a same-position rewrite stay a modified block.
+    const fallbackBuckets = bucketBlocksBy(beforeBlocks, fallbackMatchKey);
+    const unmatchedBefore = new Set(beforeBlocks);
     const entries = [];
 
     for (const after of afterBlocks) {
-      const bucket = buckets.get(after.identity);
-      const before = bucket && bucket.length > 0 ? bucket.shift() : null;
+      const before =
+        takeUnmatched(identityBuckets.get(after.identity), unmatchedBefore) ||
+        takeUnmatched(fallbackBuckets.get(fallbackMatchKey(after)), unmatchedBefore);
 
       if (!before) {
         entries.push({ identity: after.identity, kind: after.kind, status: "added", after });
@@ -2668,19 +2960,57 @@ function viewerScript(): string {
       entries.push({
         identity: after.identity,
         kind: after.kind,
-        status: before.text === after.text ? "unchanged" : "changed",
+        status: blocksHaveSameRenderedContent(before, after) ? "unchanged" : "changed",
         before,
         after
       });
     }
 
-    for (const bucket of buckets.values()) {
-      for (const before of bucket) {
+    for (const before of beforeBlocks) {
+      if (unmatchedBefore.has(before)) {
         entries.push({ identity: before.identity, kind: before.kind, status: "removed", before });
       }
     }
 
     return entries;
+  }
+
+  function bucketBlocksBy(blocks, keyForBlock) {
+    const buckets = new Map();
+    for (const block of blocks) {
+      const key = keyForBlock(block);
+      if (!key) {
+        continue;
+      }
+      if (!buckets.has(key)) {
+        buckets.set(key, []);
+      }
+      buckets.get(key).push(block);
+    }
+    return buckets;
+  }
+
+  function takeUnmatched(bucket, unmatchedBefore) {
+    while (bucket && bucket.length > 0) {
+      const block = bucket.shift();
+      if (unmatchedBefore.has(block)) {
+        unmatchedBefore.delete(block);
+        return block;
+      }
+    }
+    return null;
+  }
+
+  function fallbackMatchKey(block) {
+    if (!block || !block.identity || !block.identity.startsWith("fallback:") || !block.matchGroup) {
+      return "";
+    }
+    return block.matchGroup + ":" + (block.matchIndex || "");
+  }
+
+  function blocksHaveSameRenderedContent(before, after) {
+    return before.text === after.text &&
+      (before.comparisonSignature || "") === (after.comparisonSignature || "");
   }
 
   function applyDiff(entries, beforeBlocks, afterBlocks, afterDoc) {
@@ -3311,6 +3641,9 @@ function viewerScript(): string {
     }
     if (tagName === "tr") {
       return "table-row";
+    }
+    if (tagName === "img" || tagName === "svg" || tagName === "canvas" || tagName === "figure") {
+      return "graphic";
     }
     return "paragraph";
   }

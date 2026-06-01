@@ -18,6 +18,9 @@ export interface DiffBlock {
   headingPath: string[];
   index: number;
   diffKey?: string;
+  comparisonSignature?: string;
+  matchGroup?: string;
+  matchIndex?: number;
 }
 
 export interface DiffEntry {
@@ -62,6 +65,7 @@ export function extractBlocksFromHtml(html: string): DiffBlock[] {
   const sanitized = sanitizeHtml(html);
   const blocks: DiffBlock[] = [];
   const headingPath: string[] = [];
+  const fallbackCounts = new Map<string, number>();
   const matches = collectBlockMatches(sanitized);
 
   for (const match of matches) {
@@ -73,6 +77,9 @@ export function extractBlocksFromHtml(html: string): DiffBlock[] {
 
     const diffKey = extractDiffKey(attrs);
     const kind = match.kind ?? blockKindForTag(tagName);
+    const matchGroup = `fallback:${tagName}:${headingPath.join(">")}`;
+    const matchIndex = (fallbackCounts.get(matchGroup) ?? 0) + 1;
+    fallbackCounts.set(matchGroup, matchIndex);
     const identity = diffKey
       ? `key:${diffKey}`
       : `fallback:${tagName}:${headingPath.join(">")}:${fingerprint(text)}`;
@@ -89,6 +96,9 @@ export function extractBlocksFromHtml(html: string): DiffBlock[] {
 
     if (diffKey) {
       block.diffKey = diffKey;
+    } else {
+      block.matchGroup = matchGroup;
+      block.matchIndex = matchIndex;
     }
 
     blocks.push(block);
@@ -157,22 +167,17 @@ function isInsideAnyRange(index: number, ranges: Array<{ start: number; end: num
 }
 
 export function diffBlocks(beforeBlocks: DiffBlock[], afterBlocks: DiffBlock[]): DiffEntry[] {
-  const beforeBuckets = new Map<string, DiffBlock[]>();
-
-  for (const block of beforeBlocks) {
-    const bucket = beforeBuckets.get(block.identity);
-    if (bucket) {
-      bucket.push(block);
-    } else {
-      beforeBuckets.set(block.identity, [block]);
-    }
-  }
-
+  const beforeBuckets = bucketBlocksBy(beforeBlocks, (block) => block.identity);
+  // Fallback identities include a text fingerprint, so a big rewrite changes
+  // the identity. The group and index keep same-position prose paired.
+  const fallbackBuckets = bucketBlocksBy(beforeBlocks, fallbackMatchKey);
+  const unmatchedBefore = new Set(beforeBlocks);
   const entries: DiffEntry[] = [];
 
   for (const after of afterBlocks) {
-    const bucket = beforeBuckets.get(after.identity);
-    const before = bucket?.shift();
+    const before =
+      takeUnmatched(beforeBuckets.get(after.identity), unmatchedBefore) ??
+      takeUnmatched(fallbackBuckets.get(fallbackMatchKey(after)), unmatchedBefore);
 
     if (!before) {
       entries.push({
@@ -186,15 +191,15 @@ export function diffBlocks(beforeBlocks: DiffBlock[], afterBlocks: DiffBlock[]):
 
     entries.push({
       identity: after.identity,
-      status: before.text === after.text ? "unchanged" : "changed",
+      status: blocksHaveSameRenderedContent(before, after) ? "unchanged" : "changed",
       kind: after.kind,
       before,
       after
     });
   }
 
-  for (const bucket of beforeBuckets.values()) {
-    for (const before of bucket) {
+  for (const before of beforeBlocks) {
+    if (unmatchedBefore.has(before)) {
       entries.push({
         identity: before.identity,
         status: "removed",
@@ -205,6 +210,57 @@ export function diffBlocks(beforeBlocks: DiffBlock[], afterBlocks: DiffBlock[]):
   }
 
   return entries;
+}
+
+function bucketBlocksBy(
+  blocks: DiffBlock[],
+  keyForBlock: (block: DiffBlock) => string
+): Map<string, DiffBlock[]> {
+  const buckets = new Map<string, DiffBlock[]>();
+
+  for (const block of blocks) {
+    const key = keyForBlock(block);
+    if (!key) {
+      continue;
+    }
+
+    const bucket = buckets.get(key);
+    if (bucket) {
+      bucket.push(block);
+    } else {
+      buckets.set(key, [block]);
+    }
+  }
+
+  return buckets;
+}
+
+function takeUnmatched(
+  bucket: DiffBlock[] | undefined,
+  unmatchedBlocks: Set<DiffBlock>
+): DiffBlock | undefined {
+  while (bucket && bucket.length > 0) {
+    const block = bucket.shift();
+    if (block && unmatchedBlocks.has(block)) {
+      unmatchedBlocks.delete(block);
+      return block;
+    }
+  }
+
+  return undefined;
+}
+
+function fallbackMatchKey(block: DiffBlock): string {
+  if (!block.identity.startsWith("fallback:") || !block.matchGroup) {
+    return "";
+  }
+
+  return `${block.matchGroup}:${block.matchIndex ?? ""}`;
+}
+
+function blocksHaveSameRenderedContent(before: DiffBlock, after: DiffBlock): boolean {
+  return before.text === after.text &&
+    (before.comparisonSignature || "") === (after.comparisonSignature || "");
 }
 
 export function diffWords(beforeText: string, afterText: string): DiffSegment[] {

@@ -3,12 +3,26 @@ import { readFileSync } from "node:fs";
 import test from "node:test";
 
 import {
+  type DiffBlock,
   diffBlocks,
   diffLines,
   diffWords,
   extractBlocksFromHtml,
   sanitizeHtml
 } from "../core.js";
+
+function makeBlock(overrides: Partial<DiffBlock> & Record<string, unknown>): DiffBlock {
+  return {
+    identity: "fallback:p::example",
+    kind: "paragraph",
+    tagName: "p",
+    text: "Example",
+    html: "<p>Example</p>",
+    headingPath: [],
+    index: 0,
+    ...overrides
+  } as DiffBlock;
+}
 
 test("extracts keyed semantic blocks from HTML", () => {
   const blocks = extractBlocksFromHtml(`
@@ -75,6 +89,48 @@ test("matches stable keys and classifies added, changed, removed, and unchanged 
   assert.equal(statuses.get("key:risk"), "unchanged");
   assert.equal(statuses.get("key:new-next-step"), "added");
   assert.equal(statuses.get("key:old-next-step"), "removed");
+});
+
+test("marks matched blocks changed when rendered comparison signatures differ", () => {
+  const before = makeBlock({
+    identity: "key:footer",
+    diffKey: "footer",
+    text: "Generated report footer",
+    comparisonSignature: "style:color:rgb(31, 41, 55);rect:0,700,900,28"
+  });
+  const after = makeBlock({
+    identity: "key:footer",
+    diffKey: "footer",
+    text: "Generated report footer",
+    comparisonSignature: "style:color:rgb(185, 28, 28);rect:0,700,900,28"
+  });
+
+  const entries = diffBlocks([before], [after]);
+
+  assert.equal(entries.length, 1);
+  assert.equal(entries[0]?.status, "changed");
+});
+
+test("matches unkeyed fallback blocks by group and index when text changes heavily", () => {
+  const before = makeBlock({
+    identity: "fallback:p:Release Notes:old-approval-wait-copy",
+    text: "Manual approval wait is still blocking every production release.",
+    matchGroup: "fallback:p:Release Notes",
+    matchIndex: 1
+  });
+  const after = makeBlock({
+    identity: "fallback:p:Release Notes:automated-preview-confidence-copy",
+    text: "Automated preview confidence now promotes safe canary releases.",
+    matchGroup: "fallback:p:Release Notes",
+    matchIndex: 1
+  });
+
+  const entries = diffBlocks([before], [after]);
+
+  assert.equal(entries.length, 1);
+  assert.equal(entries[0]?.status, "changed");
+  assert.equal(entries[0]?.before, before);
+  assert.equal(entries[0]?.after, after);
 });
 
 test("performs inline word diff for prose blocks", () => {

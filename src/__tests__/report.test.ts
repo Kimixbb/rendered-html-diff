@@ -334,6 +334,96 @@ test("frame bridge reports blocks only after startup and Mermaid rendering", () 
   assert.equal(startBody.indexOf("collectAndPostBlocks()"), startBody.lastIndexOf("collectAndPostBlocks()"));
 });
 
+test("frame bridge serializes rendered comparison signatures", () => {
+  const report = renderStandaloneReport({
+    beforeHtml: "<footer data-diff-key=\"footer\">Generated report footer</footer>",
+    afterHtml: "<footer data-diff-key=\"footer\">Generated report footer</footer>",
+    beforePath: "before.html",
+    afterPath: "after.html"
+  });
+  const bridge = extractFrameBridge(report);
+
+  assert.match(bridge, /function comparisonSignatureForBlock\(element, tagName, kind\)/);
+  assert.match(bridge, /function renderedStyleSignature\(element\)/);
+  assert.match(bridge, /getComputedStyle\(element\)/);
+  assert.match(bridge, /getBoundingClientRect\(\)/);
+  assert.match(bridge, /comparisonSignature: block\.comparisonSignature/);
+});
+
+test("frame bridge collects visible keyed, semantic, media, and control blocks", () => {
+  const report = renderStandaloneReport({
+    beforeHtml: "<footer><span>Generated report footer</span></footer>",
+    afterHtml: "<footer><span>Generated report footer</span></footer>",
+    beforePath: "before.html",
+    afterPath: "after.html"
+  });
+  const bridge = extractFrameBridge(report);
+
+  assert.match(bridge, /const BLOCK_SELECTOR = \[/);
+  assert.match(bridge, /"\[data-diff-key\]"/);
+  assert.match(bridge, /"footer"/);
+  assert.match(bridge, /"figcaption"/);
+  assert.match(bridge, /"img"/);
+  assert.match(bridge, /"button"/);
+  assert.match(bridge, /"label"/);
+  assert.match(bridge, /"summary"/);
+  assert.match(bridge, /"dt"/);
+  assert.match(bridge, /"dd"/);
+  assert.match(bridge, /function shouldCollectBlockElement\(element\)/);
+  assert.match(bridge, /function isWrapperOnlyBlock\(element\)/);
+});
+
+test("frame bridge captures media and table structure in comparison signatures", () => {
+  const report = renderStandaloneReport({
+    beforeHtml: "<img data-diff-key=\"logo\" src=\"old.png\" alt=\"Logo\"><table><tr data-diff-key=\"row\"><td>A</td></tr></table>",
+    afterHtml: "<img data-diff-key=\"logo\" src=\"new.png\" alt=\"Logo\"><table><tr data-diff-key=\"row\"><td>A</td></tr></table>",
+    beforePath: "before.html",
+    afterPath: "after.html"
+  });
+  const bridge = extractFrameBridge(report);
+
+  assert.match(bridge, /function mediaSignatureForBlock\(element, tagName\)/);
+  assert.match(bridge, /currentSrc/);
+  assert.match(bridge, /getAttribute\("srcset"\)/);
+  assert.match(bridge, /getAttribute\("sizes"\)/);
+  assert.match(bridge, /function tableCellStructureSignature\(element\)/);
+  assert.match(bridge, /cell\.colSpan/);
+  assert.match(bridge, /cell\.rowSpan/);
+});
+
+test("frame bridge skips elements hidden by computed styles", () => {
+  const report = renderStandaloneReport({
+    beforeHtml: "<p style=\"display:none\">Hidden</p>",
+    afterHtml: "<p style=\"display:none\">Hidden changed</p>",
+    beforePath: "before.html",
+    afterPath: "after.html"
+  });
+  const bridge = extractFrameBridge(report);
+
+  assert.match(bridge, /function isRenderedHidden\(element\)/);
+  assert.match(bridge, /element\.closest\("\[hidden\]"\)/);
+  assert.match(bridge, /style\.display === "none"/);
+  assert.match(bridge, /style\.visibility === "hidden"/);
+  assert.match(bridge, /style\.visibility === "collapse"/);
+});
+
+test("rendered report synchronizes the comparison viewport before frames load", () => {
+  const report = renderStandaloneReport({
+    beforeHtml: "<p>Before</p>",
+    afterHtml: "<p>After</p>",
+    beforePath: "before.html",
+    afterPath: "after.html"
+  });
+
+  assert.match(report, /const COMPARISON_VIEWPORT_WIDTH = 1024/);
+  assert.match(report, /const COMPARISON_VIEWPORT_HEIGHT = 768/);
+  assert.match(report, /const comparisonViewport = syncComparisonViewport\(\)/);
+  assert.match(report, /function syncComparisonViewport\(\)/);
+  assert.match(report, /beforeIframe\.style\.width = comparisonViewport\.width \+ "px"/);
+  assert.match(report, /beforeIframe\.style\.height = comparisonViewport\.height \+ "px"/);
+  assert.match(report, /comparisonViewport/);
+});
+
 test("frame bridge disables Mermaid auto-start before page load settles", () => {
   const report = renderStandaloneReport({
     beforeHtml: "<pre class=\"mermaid\" data-diff-key=\"flow\" data-diff-kind=\"graphic\">flowchart LR\nA-->B</pre>",
@@ -622,6 +712,22 @@ test("frame bridge reapplies stored inline diffs after late app rendering", () =
   assert.match(report, /function applyStoredDiff\(\)/);
   assert.match(report, /function scheduleDiffReapply\(\)/);
   assert.match(report, /setTimeout\(\(\) => \{\s+void applyStoredDiff\(\);\s+\}, delayMs\)/);
+});
+
+test("parent diff compares comparison signatures and fallback match groups", () => {
+  const report = renderStandaloneReport({
+    beforeHtml: "<p>Old release gate copy</p>",
+    afterHtml: "<p>Automated preview copy</p>",
+    beforePath: "before.html",
+    afterPath: "after.html"
+  });
+
+  assert.match(report, /function fallbackMatchKey\(block\)/);
+  assert.match(report, /block\.identity\.startsWith\("fallback:"\)/);
+  assert.match(report, /block\.matchGroup/);
+  assert.match(report, /block\.matchIndex/);
+  assert.match(report, /function blocksHaveSameRenderedContent\(before, after\)/);
+  assert.match(report, /\(before\.comparisonSignature \|\| ""\) === \(after\.comparisonSignature \|\| ""\)/);
 });
 
 test("after frame reapplies stored diffs after app-side DOM mutations", () => {

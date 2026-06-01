@@ -18,6 +18,11 @@ contains:
 The parent report owns report UI. The iframes own input-page behavior and all
 DOM mutation inside the rendered documents.
 
+Before assigning `srcdoc`, the parent measures the visible `after` iframe and
+sets the hidden `before` iframe to the same comparison viewport. If the visible
+frame is not measurable yet, both sides fall back to 1024 by 768. Matching the
+viewport keeps media queries and rounded geometry signatures comparable.
+
 ## Startup Sequence
 
 Each frame bridge performs startup in this order:
@@ -29,7 +34,8 @@ Each frame bridge performs startup in this order:
 5. Wait for two animation frames.
 6. Wait for a short settle delay.
 7. Render Mermaid blocks in the frame.
-8. Collect semantic blocks from the live DOM.
+8. Collect visible semantic blocks and their rendered comparison signatures from
+   the live DOM.
 9. Send serialized blocks to the parent report.
 
 This sequence is part of the runtime contract. It keeps the collected block list
@@ -47,6 +53,11 @@ The parent waits until both frames send block lists. It then:
    row.
 
 The parent never directly reads or writes the frame DOM.
+
+Diff matching uses exact `data-diff-key` identities first, then ancestor-keyed
+identities, then fallback `matchGroup` plus `matchIndex` for unkeyed blocks
+whose text fingerprint changed. A matched block is modified when either its
+normalized text or rendered `comparisonSignature` differs.
 
 ## Sidebar Behavior
 
@@ -93,6 +104,11 @@ Diff highlight colors follow entry status:
 | Added | green | green `mark` tokens | exists only in `after` |
 | Modified | amber | red `del` and green `mark` tokens | matched block changed |
 | Deleted | red | red `del` tokens or deleted placeholder | exists only in `before` |
+
+Style-only, geometry-only, media-only, and table-structure changes can produce
+the modified status even when the visible text is unchanged. The inline token
+renderer still only inserts word or line markers when there is textual content
+to mark.
 
 The bridge stores status on rendered targets with `data-rhd-status`:
 
@@ -150,3 +166,8 @@ When the user clicks a sidebar row, the frame waits for the stored diff to
 reapply before finding the focus target. This is important for deleted blocks:
 deleted placeholders are removed and rebuilt during reapplication, so focusing
 too early can make a click appear to do nothing.
+
+Late reapplication restores the already-computed diff payload. It does not
+recompute comparison signatures after every app interaction, which keeps the
+report responsive and avoids treating report highlight styles as new source
+changes.
