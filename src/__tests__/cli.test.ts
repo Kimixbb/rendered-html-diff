@@ -219,6 +219,50 @@ test("one-file CLI mode renders a rich software change report from mocked Git ch
   assert.match(payload.afterHtml, /data-diff-kind="graphic"/);
 });
 
+test("one-file CLI mode can run from outside the target file repository", () => {
+  const workspace = mkdtempSync(path.join(tmpdir(), "rhd-cli-cross-cwd-repo-"));
+  const invocationCwd = mkdtempSync(path.join(tmpdir(), "rhd-cli-cross-cwd-"));
+  const reportFileName = "experiment_report.html";
+  const reportPath = path.join(workspace, reportFileName);
+  const outputPath = path.join(invocationCwd, "experiment_report_diff.html");
+  const cliPath = fileURLToPath(new URL("../cli.js", import.meta.url));
+
+  runGit(workspace, "init");
+  runGit(workspace, "config", "user.email", "test@example.com");
+  runGit(workspace, "config", "user.name", "Rendered HTML Diff Test");
+
+  writeFileSync(
+    reportPath,
+    "<h1 data-diff-key=\"title\">Original experiment report</h1>",
+    "utf8"
+  );
+  runGit(workspace, "add", reportFileName);
+  runGit(workspace, "commit", "-m", "Add experiment report baseline");
+
+  writeFileSync(
+    reportPath,
+    "<h1 data-diff-key=\"title\">Updated experiment report</h1>",
+    "utf8"
+  );
+
+  execFileSync(
+    process.execPath,
+    [cliPath, reportPath, "--out", outputPath],
+    {
+      cwd: invocationCwd,
+      encoding: "utf8"
+    }
+  );
+
+  const report = readFileSync(outputPath, "utf8");
+  const payload = extractReportPayload(report);
+
+  assert.equal(payload.beforePath, `${reportFileName} (HEAD)`);
+  assert.equal(payload.afterPath, reportFileName);
+  assert.match(payload.beforeHtml, /Original experiment report/);
+  assert.match(payload.afterHtml, /Updated experiment report/);
+});
+
 function runGit(cwd: string, ...args: string[]): void {
   execFileSync("git", args, {
     cwd,

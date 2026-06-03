@@ -123,12 +123,12 @@ export async function loadReportInput(input: CliInput, cwd: string): Promise<Rep
 }
 
 async function loadGitReportInput(input: GitFileInput, cwd: string): Promise<ReportInput> {
-  const repoRoot = (await runGit(["rev-parse", "--show-toplevel"], cwd)).trim();
   const filePath = path.resolve(cwd, input.filePath);
+  const repoRoot = await findGitRepoRoot(filePath);
   const repoRelativePath = path.relative(repoRoot, filePath);
 
   if (!repoRelativePath || isPathOutsideDirectory(repoRelativePath)) {
-    throw new Error(`${input.filePath} must be inside the current Git repository.`);
+    throw new Error(`${input.filePath} must be inside its Git repository.`);
   }
 
   // Git pathspecs use forward slashes even on Windows. Convert once and reuse
@@ -156,6 +156,13 @@ async function loadGitReportInput(input: GitFileInput, cwd: string): Promise<Rep
     beforeBaseHref: directoryBaseHref(filePath),
     afterBaseHref: directoryBaseHref(filePath)
   };
+}
+
+async function findGitRepoRoot(filePath: string): Promise<string> {
+  // One-file mode can be launched from anywhere, including a directory that is
+  // not a Git repository. Start Git discovery beside the target HTML file so
+  // absolute paths and cross-directory invocations still use the correct repo.
+  return (await runGit(["rev-parse", "--show-toplevel"], path.dirname(filePath))).trim();
 }
 
 async function readGitHeadFile(repoRoot: string, gitPath: string): Promise<string | null> {
