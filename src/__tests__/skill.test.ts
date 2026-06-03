@@ -8,13 +8,14 @@ test("repository is packaged as a Codex skill", () => {
   assert.equal(existsSync(skillPath), true, "SKILL.md should exist at the repo root");
 
   const skill = readFileSync(skillPath, "utf8");
-  const frontmatter = skill.match(/^---\n([\s\S]*?)\n---\n/);
+  const frontmatter = skill.match(/^---\r?\n([\s\S]*?)\r?\n---\r?\n/);
 
   assert(frontmatter, "SKILL.md should start with YAML frontmatter");
+  const frontmatterBody = frontmatter[1]!.replace(/\r\n/g, "\n");
 
   // Codex only reads the name and description before it decides whether to
   // load a skill, so the trigger metadata needs to be complete and predictable.
-  const frontmatterLines = frontmatter[1]!
+  const frontmatterLines = frontmatterBody
     .split("\n")
     .filter((line) => line.trim().length > 0);
 
@@ -22,8 +23,8 @@ test("repository is packaged as a Codex skill", () => {
     frontmatterLines.map((line) => line.split(":")[0]),
     ["name", "description"]
   );
-  assert.match(frontmatter[1]!, /^name: rendered-html-diff$/m);
-  assert.match(frontmatter[1]!, /^description: .+HTML.+diff.+reports.+/m);
+  assert.match(frontmatterBody, /^name: rendered-html-diff$/m);
+  assert.match(frontmatterBody, /^description: .+HTML.+diff.+reports.+/m);
 });
 
 test("skill gives agents the core rendered-html-diff workflow", () => {

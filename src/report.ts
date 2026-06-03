@@ -8,6 +8,8 @@ export interface ReportInput {
   afterHtml: string;
   beforePath: string;
   afterPath: string;
+  beforeBaseHref?: string | undefined;
+  afterBaseHref?: string | undefined;
 }
 
 export function renderStandaloneReport(input: ReportInput): string {
@@ -16,6 +18,8 @@ export function renderStandaloneReport(input: ReportInput): string {
     afterHtml: input.afterHtml,
     beforePath: input.beforePath,
     afterPath: input.afterPath,
+    beforeBaseHref: input.beforeBaseHref,
+    afterBaseHref: input.afterBaseHref,
     generatedAt: new Date().toISOString()
   };
   const mermaidRuntime = readMermaidRuntime();
@@ -1137,6 +1141,7 @@ function frameBridgeScript(): string {
       const rawText = extractRawText(element, tagName);
       const text = kind === "code" ? trimTrailingNewlines(rawText) : normalizeText(rawText);
       const explicitKey = cleanKey(element.getAttribute("data-diff-key"));
+      const existingIdentity = cleanKey(element.getAttribute("data-rhd-identity"));
 
       if (!text && !explicitKey && !hasMediaContent(element, tagName)) {
         continue;
@@ -1144,6 +1149,8 @@ function frameBridgeScript(): string {
 
       const ancestorKey = explicitKey ? "" : nearestAncestorKey(element);
       const comparisonSignature = comparisonSignatureForBlock(element, tagName, kind);
+      const blockHeadingPath = compactHeadingPath(headingPath);
+      const headingKey = blockHeadingPath.join(">");
       let matchGroup = "";
       let matchIndex = 0;
       let identity;
@@ -1152,6 +1159,12 @@ function frameBridgeScript(): string {
       if (explicitKey) {
         identity = "key:" + explicitKey;
         displayKey = explicitKey;
+      } else if (diffApplied && isReusableRenderedIdentity(existingIdentity)) {
+        const metadata = parseExistingMatchMetadata(existingIdentity);
+        identity = existingIdentity;
+        displayKey = existingIdentity.startsWith("fallback:") ? tagName + " fallback" : existingIdentity;
+        matchGroup = metadata.matchGroup;
+        matchIndex = metadata.matchIndex;
       } else if (ancestorKey) {
         const countKey = ancestorKey + ":" + tagName;
         const nextCount = (sectionCounts.get(countKey) || 0) + 1;
@@ -1161,10 +1174,12 @@ function frameBridgeScript(): string {
         matchGroup = "section:" + ancestorKey + ":" + tagName;
         matchIndex = nextCount;
       } else {
-        matchGroup = "fallback:" + tagName + ":" + headingPath.join(">");
+        matchGroup = "fallback:" + tagName + ":" + headingKey;
         matchIndex = (fallbackCounts.get(matchGroup) || 0) + 1;
         fallbackCounts.set(matchGroup, matchIndex);
-        identity = "fallback:" + tagName + ":" + headingPath.join(">") + ":" + fingerprint(text);
+        // The match index separates repeated unkeyed blocks for focus clicks,
+        // while matchGroup plus matchIndex keeps matching stable.
+        identity = "fallback:" + tagName + ":" + headingKey + ":" + matchIndex + ":" + fingerprint(text);
         displayKey = tagName + " fallback";
       }
 
@@ -1181,11 +1196,11 @@ function frameBridgeScript(): string {
         comparisonSignature,
         matchGroup,
         matchIndex,
-        headingPath: headingPath.slice(),
+        headingPath: blockHeadingPath,
         index: blocks.length,
         html: element.outerHTML,
         element,
-        label: labelForBlock(text, headingPath, displayKey, kind)
+        label: labelForBlock(text, blockHeadingPath, displayKey, kind)
       };
 
       blocks.push(block);
@@ -1199,6 +1214,42 @@ function frameBridgeScript(): string {
     }
 
     return blocks;
+  }
+
+  function compactHeadingPath(headingPath) {
+    // Documents sometimes start at h2 or h3. Removing empty heading slots keeps
+    // fallback keys stable and avoids sidebar section names like ">Gallery".
+    return headingPath.filter(Boolean);
+  }
+
+  function isReusableRenderedIdentity(identity) {
+    return identity.startsWith("fallback:") || identity.startsWith("section:");
+  }
+
+  function parseExistingMatchMetadata(existingIdentity) {
+    if (existingIdentity.startsWith("fallback:")) {
+      const fingerprintSeparator = existingIdentity.lastIndexOf(":");
+      const indexSeparator = existingIdentity.lastIndexOf(":", fingerprintSeparator - 1);
+      const matchIndex = Number.parseInt(existingIdentity.slice(indexSeparator + 1, fingerprintSeparator), 10);
+      return {
+        matchGroup: indexSeparator > -1 ? existingIdentity.slice(0, indexSeparator) : "",
+        matchIndex: Number.isFinite(matchIndex) ? matchIndex : 0
+      };
+    }
+
+    if (existingIdentity.startsWith("section:")) {
+      const indexSeparator = existingIdentity.lastIndexOf(":");
+      const matchIndex = Number.parseInt(existingIdentity.slice(indexSeparator + 1), 10);
+      return {
+        matchGroup: indexSeparator > -1 ? existingIdentity.slice(0, indexSeparator) : "",
+        matchIndex: Number.isFinite(matchIndex) ? matchIndex : 0
+      };
+    }
+
+    return {
+      matchGroup: "",
+      matchIndex: 0
+    };
   }
 
   function shouldCollectBlockElement(element) {
@@ -1452,6 +1503,7 @@ function frameBridgeScript(): string {
         }
       }
 
+      markDiffPageContainers(document);
       prepareDiffLists(document);
       restoreFocusedTarget();
     } finally {
@@ -1534,6 +1586,11 @@ function frameBridgeScript(): string {
     }
 
     diffReapplyTimers = [];
+
+    if (interactiveDiffReapplyTimer !== null) {
+      clearTimeout(interactiveDiffReapplyTimer);
+      interactiveDiffReapplyTimer = null;
+    }
   }
 
   async function renderInlineDiff(entry, doc) {
@@ -2183,6 +2240,53 @@ function frameBridgeScript(): string {
     doc.body.prepend(placeholder);
   }
 
+  function markDiffPageContainers(doc) {
+    const targets = Array.from(doc.querySelectorAll(
+      ".rhd-block-added, .rhd-block-changed, .rhd-removed-block, [data-rhd-status]"
+    ));
+
+    for (const target of targets) {
+      const container = findDiffPageContainer(target, doc);
+      if (!container) {
+        continue;
+      }
+
+      if (!container.style.getPropertyValue("--rhd-page-min-height")) {
+        const rect = container.getBoundingClientRect();
+        if (rect.height > 0) {
+          container.style.setProperty("--rhd-page-min-height", Math.round(rect.height) + "px");
+        }
+      }
+
+      container.classList.add("rhd-diff-page-expanded");
+    }
+  }
+
+  function findDiffPageContainer(target, doc) {
+    let current = target;
+    while (current && current !== doc.body && current !== doc.documentElement) {
+      if (isDiffPageContainer(current)) {
+        return current;
+      }
+      current = current.parentElement;
+    }
+
+    return null;
+  }
+
+  function isDiffPageContainer(element) {
+    const className = String(element.className || "");
+    const style = getComputedStyle(element);
+    const overflow = [style.overflow, style.overflowX, style.overflowY].join(" ");
+    const hasPageName = /\b(page|sheet|slide)\b/i.test(className);
+    const clipsOverflow = /\b(hidden|clip)\b/i.test(overflow);
+    const hasFixedHeight = style.height && style.height !== "auto" && style.height !== "0px";
+
+    // Many exported reports model print pages with a page wrapper. Some use
+    // fixed-height overflow clipping instead. Both need room for inserted diffs.
+    return hasPageName || (clipsOverflow && hasFixedHeight);
+  }
+
   function prepareDiffLists(doc) {
     const changedListItems = doc.querySelectorAll(
       "li.rhd-block-added, li.rhd-block-changed, li.rhd-removed-list-item"
@@ -2262,11 +2366,11 @@ function frameBridgeScript(): string {
 
   async function focusIdentity(identity) {
     focusedIdentity = identity;
+    clearDiffReapplyTimers();
     // Reapplying the diff rebuilds deleted placeholders. Wait for that work
     // to finish so sidebar clicks can focus deleted charts, text, and rows.
     await applyStoredDiff();
     const target = findRenderedTarget(identity);
-    scheduleDiffReapply();
 
     if (!target) {
       clearFocusedTargets();
@@ -2278,7 +2382,7 @@ function frameBridgeScript(): string {
       customFocus(identity, target);
     }
 
-    target.scrollIntoView({ behavior: "smooth", block: "center" });
+    target.scrollIntoView({ behavior: "auto", block: "center" });
     applyFocusMarker(target);
   }
 
@@ -2335,6 +2439,7 @@ function frameBridgeScript(): string {
       '.rhd-block-added, [data-rhd-status="+"] { --rhd-marker-color: #2da44e; --rhd-block-bg: #dafbe1; --rhd-outline-color: rgba(45, 164, 78, 0.7); --rhd-halo-color: rgba(45, 164, 78, 0.16); --rhd-focus-ring-color: rgba(45, 164, 78, 0.28); }',
       '.rhd-block-changed, [data-rhd-status="~"] { --rhd-marker-color: #9a6700; --rhd-block-bg: #fff8c5; --rhd-outline-color: rgba(154, 103, 0, 0.65); --rhd-halo-color: rgba(154, 103, 0, 0.18); --rhd-focus-ring-color: rgba(154, 103, 0, 0.28); }',
       '.rhd-removed-block, [data-rhd-status="-"] { --rhd-marker-color: #cf222e; --rhd-focus-ring-color: rgba(207, 34, 46, 0.28); }',
+      ".rhd-diff-page-expanded { height: auto !important; min-height: var(--rhd-page-min-height, auto) !important; max-height: none !important; overflow: visible !important; overflow-x: visible !important; overflow-y: visible !important; break-inside: auto !important; page-break-inside: auto !important; }",
       ".rhd-block-added:not(pre):not(tr), .rhd-block-changed:not(pre):not(tr) { max-width: 100% !important; overflow-wrap: anywhere !important; background: var(--rhd-block-bg) !important; outline: 1px solid var(--rhd-outline-color) !important; box-shadow: inset 4px 0 0 var(--rhd-marker-color) !important; padding-left: max(10px, 0.65em) !important; padding-right: 6px !important; }",
       ".rhd-diff-list { padding-left: 0 !important; list-style: none !important; counter-reset: rhd-list-item !important; }",
       ".rhd-diff-list > li { display: grid !important; grid-template-columns: 2.35em minmax(0, 1fr) !important; column-gap: 0.45em !important; align-items: baseline !important; list-style: none !important; padding-left: 0 !important; }",
@@ -2584,8 +2689,8 @@ function viewerScript(): string {
 
   window.addEventListener("message", handleFrameMessage);
   const comparisonViewport = syncComparisonViewport();
-  beforeIframe.srcdoc = createFrameHtml(data.beforeHtml, "before", comparisonViewport);
-  iframe.srcdoc = createFrameHtml(data.afterHtml, "after", comparisonViewport);
+  beforeIframe.srcdoc = createFrameHtml(data.beforeHtml, "before", comparisonViewport, data.beforeBaseHref || "");
+  iframe.srcdoc = createFrameHtml(data.afterHtml, "after", comparisonViewport, data.afterBaseHref || "");
 
   function setupSidebarToggle() {
     if (!shell || !sidebarToggle) {
@@ -2774,7 +2879,8 @@ function viewerScript(): string {
     }, "*");
   }
 
-  function createFrameHtml(html, frameId, comparisonViewport) {
+  function createFrameHtml(html, frameId, comparisonViewport, baseHref = "") {
+    const frameHtml = injectBaseHref(html, baseHref);
     const configScript = "window.__rhdBridgeConfig = " + JSON.stringify({
       token: frameToken,
       frameId,
@@ -2788,17 +2894,46 @@ function viewerScript(): string {
 
     // Source editors often display literal HTML such as "</body>". Insert at
     // the final document close so trusted bridge code never lands in visible text.
-    const bodyCloseIndex = findLastCaseInsensitive(html, "</body>");
+    const bodyCloseIndex = findLastCaseInsensitive(frameHtml, "</body>");
     if (bodyCloseIndex !== -1) {
-      return html.slice(0, bodyCloseIndex) + injection + "\n" + html.slice(bodyCloseIndex);
+      return frameHtml.slice(0, bodyCloseIndex) + injection + "\n" + frameHtml.slice(bodyCloseIndex);
     }
 
-    const htmlCloseIndex = findLastCaseInsensitive(html, "</html>");
+    const htmlCloseIndex = findLastCaseInsensitive(frameHtml, "</html>");
     if (htmlCloseIndex !== -1) {
-      return html.slice(0, htmlCloseIndex) + injection + "\n" + html.slice(htmlCloseIndex);
+      return frameHtml.slice(0, htmlCloseIndex) + injection + "\n" + frameHtml.slice(htmlCloseIndex);
     }
 
-    return html + "\n" + injection;
+    return frameHtml + "\n" + injection;
+  }
+
+  function injectBaseHref(html, baseHref) {
+    if (!baseHref) {
+      return html;
+    }
+
+    const tag = '<base href="' + escapeHtmlAttribute(baseHref) + '">';
+    const headOpen = html.match(/<head\b[^>]*>/i);
+    if (headOpen && typeof headOpen.index === "number") {
+      const insertionIndex = headOpen.index + headOpen[0].length;
+      return html.slice(0, insertionIndex) + tag + html.slice(insertionIndex);
+    }
+
+    const htmlOpen = html.match(/<html\b[^>]*>/i);
+    if (htmlOpen && typeof htmlOpen.index === "number") {
+      const insertionIndex = htmlOpen.index + htmlOpen[0].length;
+      return html.slice(0, insertionIndex) + "<head>" + tag + "</head>" + html.slice(insertionIndex);
+    }
+
+    return "<head>" + tag + "</head>\n" + html;
+  }
+
+  function escapeHtmlAttribute(value) {
+    return String(value)
+      .replace(/&/g, "&amp;")
+      .replace(/"/g, "&quot;")
+      .replace(/</g, "&lt;")
+      .replace(/>/g, "&gt;");
   }
 
   function findLastCaseInsensitive(value, needle) {
@@ -2870,6 +3005,7 @@ function viewerScript(): string {
     const elements = Array.from((doc.body || doc).querySelectorAll(selector));
     const headingPath = [];
     const sectionCounts = new Map();
+    const fallbackCounts = new Map();
     const blocks = [];
 
     for (const element of elements) {
@@ -2894,6 +3030,10 @@ function viewerScript(): string {
 
       const explicitKey = cleanKey(element.getAttribute("data-diff-key"));
       const ancestorKey = explicitKey ? "" : nearestAncestorKey(element);
+      const blockHeadingPath = compactHeadingPath(headingPath);
+      const headingKey = blockHeadingPath.join(">");
+      let matchGroup = "";
+      let matchIndex = 0;
       let identity;
       let displayKey;
 
@@ -2906,8 +3046,13 @@ function viewerScript(): string {
         sectionCounts.set(countKey, nextCount);
         identity = "section:" + ancestorKey + ":" + tagName + ":" + nextCount;
         displayKey = ancestorKey + "/" + tagName + "-" + nextCount;
+        matchGroup = "section:" + ancestorKey + ":" + tagName;
+        matchIndex = nextCount;
       } else {
-        identity = "fallback:" + tagName + ":" + headingPath.join(">") + ":" + fingerprint(text);
+        matchGroup = "fallback:" + tagName + ":" + headingKey;
+        matchIndex = (fallbackCounts.get(matchGroup) || 0) + 1;
+        fallbackCounts.set(matchGroup, matchIndex);
+        identity = "fallback:" + tagName + ":" + headingKey + ":" + matchIndex + ":" + fingerprint(text);
         displayKey = tagName + " fallback";
       }
 
@@ -2921,10 +3066,12 @@ function viewerScript(): string {
         text,
         rawText,
         cellTexts: tagName === "tr" ? Array.from(element.children).map((cell) => normalizeText(cell.textContent || "")) : [],
-        headingPath: headingPath.slice(),
+        matchGroup,
+        matchIndex,
+        headingPath: blockHeadingPath,
         index: blocks.length,
         element,
-        label: labelForBlock(text, headingPath, displayKey, kind)
+        label: labelForBlock(text, blockHeadingPath, displayKey, kind)
       };
 
       blocks.push(block);
@@ -2937,6 +3084,10 @@ function viewerScript(): string {
     }
 
     return blocks;
+  }
+
+  function compactHeadingPath(headingPath) {
+    return headingPath.filter(Boolean);
   }
 
   function diffBlocks(beforeBlocks, afterBlocks) {
@@ -3488,7 +3639,7 @@ function viewerScript(): string {
       return;
     }
 
-    target.scrollIntoView({ behavior: "smooth", block: "center" });
+    target.scrollIntoView({ behavior: "auto", block: "center" });
     applyFocusMarker(target, afterDoc);
   }
 

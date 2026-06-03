@@ -133,6 +133,21 @@ test("matches unkeyed fallback blocks by group and index when text changes heavi
   assert.equal(entries[0]?.after, after);
 });
 
+test("assigns unique fallback identities to repeated unkeyed blocks", () => {
+  const blocks = extractBlocksFromHtml(`
+    <h2>Gallery</h2>
+    <p>Same caption</p>
+    <p>Same caption</p>
+  `);
+  const repeated = blocks.filter((block) => block.tagName === "p");
+
+  assert.equal(repeated.length, 2);
+  assert.notEqual(repeated[0]?.identity, repeated[1]?.identity);
+  assert.equal(repeated[0]?.matchGroup, "fallback:p:Gallery");
+  assert.equal(repeated[0]?.matchIndex, 1);
+  assert.equal(repeated[1]?.matchIndex, 2);
+});
+
 test("performs inline word diff for prose blocks", () => {
   const segments = diffWords(
     "Added basic cleanup.",

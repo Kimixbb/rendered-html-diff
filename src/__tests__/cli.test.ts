@@ -4,7 +4,7 @@ import { mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import test from "node:test";
-import { fileURLToPath } from "node:url";
+import { fileURLToPath, pathToFileURL } from "node:url";
 
 import { loadReportInput, parseArgs } from "../cli.js";
 
@@ -67,6 +67,64 @@ test("loadReportInput reads Git HEAD as before and the working tree as after", a
   assert.match(input.afterHtml, /After report/);
   assert.equal(input.beforePath, "reports/page.html (HEAD)");
   assert.equal(input.afterPath, "reports/page.html");
+  assert.equal(input.beforeBaseHref, directoryBaseHref(pagePath));
+  assert.equal(input.afterBaseHref, directoryBaseHref(pagePath));
+});
+
+test("loadReportInput records base URLs for explicit before and after files", async () => {
+  const workspace = mkdtempSync(path.join(tmpdir(), "rhd-cli-base-"));
+  const beforePath = path.join(workspace, "old", "page.html");
+  const afterPath = path.join(workspace, "new", "page.html");
+
+  mkdirSync(path.dirname(beforePath), { recursive: true });
+  mkdirSync(path.dirname(afterPath), { recursive: true });
+  writeFileSync(beforePath, "<img src=\"assets/before.png\">", "utf8");
+  writeFileSync(afterPath, "<img src=\"assets/after.png\">", "utf8");
+
+  const input = await loadReportInput(
+    {
+      kind: "file-pair",
+      beforePath: "old/page.html",
+      afterPath: "new/page.html"
+    },
+    workspace
+  );
+
+  assert.equal(input.beforeBaseHref, directoryBaseHref(beforePath));
+  assert.equal(input.afterBaseHref, directoryBaseHref(afterPath));
+});
+
+test("loadReportInput inlines local relative media assets for sandboxed frames", async () => {
+  const workspace = mkdtempSync(path.join(tmpdir(), "rhd-cli-assets-"));
+  const beforePath = path.join(workspace, "old", "page.html");
+  const afterPath = path.join(workspace, "new", "page.html");
+  const pngBytes = Buffer.from(TINY_PNG_BASE64, "base64");
+
+  mkdirSync(path.join(workspace, "old", "assets"), { recursive: true });
+  mkdirSync(path.join(workspace, "new", "assets"), { recursive: true });
+  writeFileSync(path.join(workspace, "old", "assets", "before.png"), pngBytes);
+  writeFileSync(path.join(workspace, "new", "assets", "after.png"), pngBytes);
+  writeFileSync(path.join(workspace, "new", "assets", "after-2x.png"), pngBytes);
+  writeFileSync(beforePath, "<img src=\"assets/before.png\">", "utf8");
+  writeFileSync(
+    afterPath,
+    "<img src=\"assets/after.png\" srcset=\"assets/after.png 1x, assets/after-2x.png 2x\">",
+    "utf8"
+  );
+
+  const input = await loadReportInput(
+    {
+      kind: "file-pair",
+      beforePath: "old/page.html",
+      afterPath: "new/page.html"
+    },
+    workspace
+  );
+
+  assert.match(input.beforeHtml, /src="data:image\/png;base64,/);
+  assert.match(input.afterHtml, /src="data:image\/png;base64,/);
+  assert.match(input.afterHtml, /srcset="data:image\/png;base64,[^"]+ 1x, data:image\/png;base64,[^"]+ 2x"/);
+  assert.doesNotMatch(input.afterHtml, /src="assets\/after\.png"/);
 });
 
 test("loadReportInput rejects one-file Git diffs for files missing from HEAD", async () => {
@@ -142,6 +200,8 @@ test("one-file CLI mode renders a rich software change report from mocked Git ch
   assert.match(stdout, /Rendered HTML diff written to/);
   assert.equal(payload.beforePath, `${reportFileName} (HEAD)`);
   assert.equal(payload.afterPath, reportFileName);
+  assert.equal(payload.beforeBaseHref, directoryBaseHref(reportPath));
+  assert.equal(payload.afterBaseHref, directoryBaseHref(reportPath));
 
   assert.match(payload.beforeHtml, /Manual QA Sign-off/);
   assert.match(payload.afterHtml, /Automated Preview Gate/);
@@ -171,6 +231,8 @@ function extractReportPayload(report: string): {
   afterHtml: string;
   beforePath: string;
   afterPath: string;
+  beforeBaseHref?: string;
+  afterBaseHref?: string;
 } {
   const dataMatch = report.match(/<script id="rhd-data" type="application\/json">([\s\S]*?)<\/script>/);
 
@@ -185,8 +247,17 @@ function extractReportPayload(report: string): {
     afterHtml: string;
     beforePath: string;
     afterPath: string;
+    beforeBaseHref?: string;
+    afterBaseHref?: string;
   };
 }
+
+function directoryBaseHref(filePath: string): string {
+  return pathToFileURL(`${path.dirname(filePath)}${path.sep}`).href;
+}
+
+const TINY_PNG_BASE64 =
+  "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+/p9sAAAAASUVORK5CYII=";
 
 function softwareDeliveryReportBeforeHtml(): string {
   return `<!doctype html>

@@ -2,7 +2,7 @@
 import { execFile } from "node:child_process";
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
-import { pathToFileURL } from "node:url";
+import { fileURLToPath, pathToFileURL } from "node:url";
 
 import { renderStandaloneReport } from "./report.js";
 
@@ -33,6 +33,8 @@ export interface ReportInput {
   afterHtml: string;
   beforePath: string;
   afterPath: string;
+  beforeBaseHref?: string | undefined;
+  afterBaseHref?: string | undefined;
 }
 
 export async function main(argv: string[]): Promise<void> {
@@ -44,7 +46,9 @@ export async function main(argv: string[]): Promise<void> {
     beforeHtml: input.beforeHtml,
     afterHtml: input.afterHtml,
     beforePath: input.beforePath,
-    afterPath: input.afterPath
+    afterPath: input.afterPath,
+    beforeBaseHref: input.beforeBaseHref,
+    afterBaseHref: input.afterBaseHref
   });
 
   await mkdir(path.dirname(outPath), { recursive: true });
@@ -99,16 +103,22 @@ export async function loadReportInput(input: CliInput, cwd: string): Promise<Rep
 
   const beforePath = path.resolve(cwd, input.beforePath);
   const afterPath = path.resolve(cwd, input.afterPath);
-  const [beforeHtml, afterHtml] = await Promise.all([
+  const [beforeSourceHtml, afterSourceHtml] = await Promise.all([
     readFile(beforePath, "utf8"),
     readFile(afterPath, "utf8")
+  ]);
+  const [beforeHtml, afterHtml] = await Promise.all([
+    inlineLocalMediaAssets(beforeSourceHtml, beforePath),
+    inlineLocalMediaAssets(afterSourceHtml, afterPath)
   ]);
 
   return {
     beforeHtml,
     afterHtml,
     beforePath: displayPath(cwd, beforePath),
-    afterPath: displayPath(cwd, afterPath)
+    afterPath: displayPath(cwd, afterPath),
+    beforeBaseHref: directoryBaseHref(beforePath),
+    afterBaseHref: directoryBaseHref(afterPath)
   };
 }
 
@@ -135,11 +145,16 @@ async function loadGitReportInput(input: GitFileInput, cwd: string): Promise<Rep
     );
   }
 
+  const processedBeforeHtml = await inlineLocalMediaAssets(beforeHtml, filePath);
+  const processedAfterHtml = await inlineLocalMediaAssets(afterHtml ?? "", filePath);
+
   return {
-    beforeHtml,
-    afterHtml: afterHtml ?? "",
+    beforeHtml: processedBeforeHtml,
+    afterHtml: processedAfterHtml,
     beforePath: `${gitPath} (HEAD)`,
-    afterPath: gitPath
+    afterPath: gitPath,
+    beforeBaseHref: directoryBaseHref(filePath),
+    afterBaseHref: directoryBaseHref(filePath)
   };
 }
 
@@ -189,6 +204,190 @@ function runGit(args: string[], cwd: string): Promise<string> {
 
 function displayPath(cwd: string, filePath: string): string {
   return path.relative(cwd, filePath) || filePath;
+}
+
+async function inlineLocalMediaAssets(html: string, sourceFilePath: string): Promise<string> {
+  const baseDir = path.dirname(sourceFilePath);
+  const cache = new Map<string, string | null>();
+  let result = await replaceMatches(
+    html,
+    /\b(src|poster)\s*=\s*(["'])(.*?)\2/gi,
+    async (match) => {
+      const attrName = match[1]!;
+      const quote = match[2]!;
+      const rawUrl = match[3]!;
+      const dataUri = await dataUriForLocalMedia(rawUrl, baseDir, cache);
+      return dataUri ? `${attrName}=${quote}${dataUri}${quote}` : match[0]!;
+    }
+  );
+
+  result = await replaceMatches(
+    result,
+    /\b(srcset)\s*=\s*(["'])(.*?)\2/gi,
+    async (match) => {
+      const attrName = match[1]!;
+      const quote = match[2]!;
+      const rawSrcset = match[3]!;
+      const inlinedSrcset = await inlineLocalSrcset(rawSrcset, baseDir, cache);
+      return inlinedSrcset === rawSrcset ? match[0]! : `${attrName}=${quote}${inlinedSrcset}${quote}`;
+    }
+  );
+
+  return result;
+}
+
+async function replaceMatches(
+  input: string,
+  pattern: RegExp,
+  replacer: (match: RegExpMatchArray) => Promise<string>
+): Promise<string> {
+  const matches = Array.from(input.matchAll(pattern));
+  let output = "";
+  let cursor = 0;
+
+  for (const match of matches) {
+    const index = match.index ?? cursor;
+    output += input.slice(cursor, index);
+    output += await replacer(match);
+    cursor = index + match[0]!.length;
+  }
+
+  return output + input.slice(cursor);
+}
+
+async function inlineLocalSrcset(
+  srcset: string,
+  baseDir: string,
+  cache: Map<string, string | null>
+): Promise<string> {
+  const candidates = srcset.split(",");
+  const rewritten = await Promise.all(candidates.map(async (candidate) => {
+    const leading = candidate.match(/^\s*/)?.[0] ?? "";
+    const trailing = candidate.match(/\s*$/)?.[0] ?? "";
+    const body = candidate.trim();
+
+    if (!body || body.toLowerCase().startsWith("data:")) {
+      return candidate;
+    }
+
+    const parts = body.split(/\s+/);
+    const rawUrl = parts[0]!;
+    const descriptor = parts.slice(1).join(" ");
+    const dataUri = await dataUriForLocalMedia(rawUrl, baseDir, cache);
+
+    if (!dataUri) {
+      return candidate;
+    }
+
+    return `${leading}${dataUri}${descriptor ? ` ${descriptor}` : ""}${trailing}`;
+  }));
+
+  return rewritten.join(",");
+}
+
+async function dataUriForLocalMedia(
+  rawUrl: string,
+  baseDir: string,
+  cache: Map<string, string | null>
+): Promise<string | null> {
+  const assetPath = resolveLocalMediaPath(rawUrl, baseDir);
+  if (!assetPath) {
+    return null;
+  }
+
+  const cacheKey = assetPath.toLowerCase();
+  if (cache.has(cacheKey)) {
+    return cache.get(cacheKey) ?? null;
+  }
+
+  const mimeType = mediaMimeType(assetPath);
+  if (!mimeType) {
+    cache.set(cacheKey, null);
+    return null;
+  }
+
+  try {
+    const bytes = await readFile(assetPath);
+    const dataUri = `data:${mimeType};base64,${bytes.toString("base64")}`;
+    cache.set(cacheKey, dataUri);
+    return dataUri;
+  } catch {
+    // Missing optional assets should not stop a report from being generated.
+    // Leave the original URL in place so the author can still diagnose it.
+    cache.set(cacheKey, null);
+    return null;
+  }
+}
+
+function resolveLocalMediaPath(rawUrl: string, baseDir: string): string | null {
+  const trimmed = rawUrl.trim();
+  if (!trimmed || trimmed.startsWith("#") || /^(data|blob|javascript|mailto|tel):/i.test(trimmed)) {
+    return null;
+  }
+
+  const localPart = stripUrlSuffix(trimmed);
+  if (!localPart || !hasEmbeddableMediaExtension(localPart)) {
+    return null;
+  }
+
+  if (/^[a-zA-Z]:[\\/]/.test(localPart) || path.isAbsolute(localPart)) {
+    return path.resolve(decodeLocalPath(localPart));
+  }
+
+  if (/^[a-zA-Z][a-zA-Z\d+.-]*:/.test(trimmed)) {
+    try {
+      const url = new URL(trimmed);
+      return url.protocol === "file:" ? fileURLToPath(url) : null;
+    } catch {
+      return null;
+    }
+  }
+
+  return path.resolve(baseDir, decodeLocalPath(localPart));
+}
+
+function stripUrlSuffix(value: string): string {
+  return value.split("#")[0]!.split("?")[0]!;
+}
+
+function decodeLocalPath(value: string): string {
+  try {
+    return decodeURIComponent(value);
+  } catch {
+    return value;
+  }
+}
+
+function hasEmbeddableMediaExtension(filePath: string): boolean {
+  return /\.(avif|bmp|gif|jpe?g|png|svg|webp)$/i.test(filePath);
+}
+
+function mediaMimeType(filePath: string): string | null {
+  switch (path.extname(filePath).toLowerCase()) {
+    case ".avif":
+      return "image/avif";
+    case ".bmp":
+      return "image/bmp";
+    case ".gif":
+      return "image/gif";
+    case ".jpg":
+    case ".jpeg":
+      return "image/jpeg";
+    case ".png":
+      return "image/png";
+    case ".svg":
+      return "image/svg+xml";
+    case ".webp":
+      return "image/webp";
+    default:
+      return null;
+  }
+}
+
+function directoryBaseHref(filePath: string): string {
+  // `srcdoc` documents normally resolve relative assets against the report
+  // file. A base URL restores the original HTML directory for images and CSS.
+  return pathToFileURL(`${path.dirname(filePath)}${path.sep}`).href;
 }
 
 function isPathOutsideDirectory(relativePath: string): boolean {

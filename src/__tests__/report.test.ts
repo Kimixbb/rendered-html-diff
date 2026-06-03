@@ -4,7 +4,12 @@ import test from "node:test";
 
 import { renderStandaloneReport } from "../report.js";
 
-type CreateFrameHtml = (html: string, frameId: string) => string;
+type CreateFrameHtml = (
+  html: string,
+  frameId: string,
+  comparisonViewport?: { width: number; height: number },
+  baseHref?: string
+) => string;
 
 function extractCreateFrameHtml(report: string): CreateFrameHtml {
   const helperMatch = report.match(
@@ -302,6 +307,31 @@ test("frame runtime is injected at the real document end, not visible source tex
   assert.match(frameHtml, /literal <\/body> marker<\/pre>/);
 });
 
+test("frame runtime injects a base URL before relative assets", () => {
+  const report = renderStandaloneReport({
+    beforeHtml: "<p>Before</p>",
+    afterHtml: "<p>After</p>",
+    beforePath: "before.html",
+    afterPath: "after.html",
+    beforeBaseHref: "file:///C:/Dev/find-similar-clothes/",
+    afterBaseHref: "file:///C:/Dev/find-similar-clothes/"
+  });
+  const createFrameHtml = extractCreateFrameHtml(report);
+  const frameHtml = createFrameHtml(
+    "<!doctype html><html><head><title>Report</title></head><body><img src=\"outputs/result.png\"></body></html>",
+    "after",
+    { width: 1024, height: 768 },
+    "file:///C:/Dev/find-similar-clothes/"
+  );
+  const baseIndex = frameHtml.indexOf('<base href="file:///C:/Dev/find-similar-clothes/">');
+  const imageIndex = frameHtml.indexOf('<img src="outputs/result.png">');
+  const scriptIndex = frameHtml.indexOf("<script>window.__mermaidRuntimeTest = true;");
+
+  assert.ok(baseIndex !== -1, "frame HTML should include a base tag");
+  assert.ok(baseIndex < imageIndex, "base tag should appear before relative images");
+  assert.ok(imageIndex < scriptIndex, "runtime scripts should still be injected at the document end");
+});
+
 test("frame bridge reports blocks only after startup and Mermaid rendering", () => {
   const report = renderStandaloneReport({
     beforeHtml: "<pre class=\"mermaid\" data-diff-key=\"flow\" data-diff-kind=\"graphic\">flowchart LR\nA-->B</pre>",
@@ -422,6 +452,54 @@ test("rendered report synchronizes the comparison viewport before frames load", 
   assert.match(report, /beforeIframe\.style\.width = comparisonViewport\.width \+ "px"/);
   assert.match(report, /beforeIframe\.style\.height = comparisonViewport\.height \+ "px"/);
   assert.match(report, /comparisonViewport/);
+});
+
+test("frame bridge expands page containers that would clip long diffs", () => {
+  const report = renderStandaloneReport({
+    beforeHtml: "<section class=\"page\"><pre data-diff-key=\"code\">old</pre></section>",
+    afterHtml: "<section class=\"page\"><pre data-diff-key=\"code\">new</pre></section>",
+    beforePath: "before.html",
+    afterPath: "after.html"
+  });
+  const bridge = extractFrameBridge(report);
+
+  assert.match(bridge, /function markDiffPageContainers\(doc\)/);
+  assert.match(bridge, /findDiffPageContainer\(target, doc\)/);
+  assert.match(bridge, /container\.classList\.add\("rhd-diff-page-expanded"\)/);
+  assert.match(bridge, /\.rhd-diff-page-expanded/);
+  assert.match(bridge, /overflow: visible !important/);
+  assert.match(bridge, /max-height: none !important/);
+  assert.match(bridge, /markDiffPageContainers\(document\)/);
+});
+
+test("focus clicks do not schedule delayed reapply scroll jumps", () => {
+  const report = renderStandaloneReport({
+    beforeHtml: "<p data-diff-key=\"copy\">Old copy</p>",
+    afterHtml: "<p data-diff-key=\"copy\">New copy</p>",
+    beforePath: "before.html",
+    afterPath: "after.html"
+  });
+  const bridge = extractFrameBridge(report);
+  const focusMatch = bridge.match(/async function focusIdentity\(identity\) \{([\s\S]*?)\n  \}/);
+
+  assert(focusMatch, "frame bridge should include focusIdentity");
+  assert.match(focusMatch[1]!, /clearDiffReapplyTimers\(\)/);
+  assert.doesNotMatch(focusMatch[1]!, /scheduleDiffReapply\(\)/);
+  assert.match(focusMatch[1]!, /target\.scrollIntoView\(\{ behavior: "auto", block: "center" \}\)/);
+});
+
+test("frame bridge preserves fallback identities across inline diff reapply", () => {
+  const report = renderStandaloneReport({
+    beforeHtml: "<h2>Gallery</h2><p>Repeated fallback paragraph before.</p>",
+    afterHtml: "<h2>Gallery</h2><p>Repeated fallback paragraph after.</p>",
+    beforePath: "before.html",
+    afterPath: "after.html"
+  });
+  const bridge = extractFrameBridge(report);
+
+  assert.match(bridge, /const existingIdentity = cleanKey\(element\.getAttribute\("data-rhd-identity"\)\)/);
+  assert.match(bridge, /parseExistingMatchMetadata\(existingIdentity\)/);
+  assert.match(bridge, /identity = existingIdentity/);
 });
 
 test("frame bridge disables Mermaid auto-start before page load settles", () => {

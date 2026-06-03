@@ -77,12 +77,16 @@ export function extractBlocksFromHtml(html: string): DiffBlock[] {
 
     const diffKey = extractDiffKey(attrs);
     const kind = match.kind ?? blockKindForTag(tagName);
-    const matchGroup = `fallback:${tagName}:${headingPath.join(">")}`;
+    const blockHeadingPath = compactHeadingPath(headingPath);
+    const headingKey = blockHeadingPath.join(">");
+    const matchGroup = `fallback:${tagName}:${headingKey}`;
     const matchIndex = (fallbackCounts.get(matchGroup) ?? 0) + 1;
     fallbackCounts.set(matchGroup, matchIndex);
     const identity = diffKey
       ? `key:${diffKey}`
-      : `fallback:${tagName}:${headingPath.join(">")}:${fingerprint(text)}`;
+      // The ordinal keeps repeated same-text blocks clickable as separate
+      // targets. `matchGroup` and `matchIndex` still do the stable pairing.
+      : `fallback:${tagName}:${headingKey}:${matchIndex}:${fingerprint(text)}`;
 
     const block: DiffBlock = {
       identity,
@@ -90,7 +94,7 @@ export function extractBlocksFromHtml(html: string): DiffBlock[] {
       tagName,
       text,
       html: fullHtml,
-      headingPath: [...headingPath],
+      headingPath: blockHeadingPath,
       index: blocks.length
     };
 
@@ -160,6 +164,12 @@ function collectBlockMatches(html: string): BlockMatch[] {
   }
 
   return matches.sort((left, right) => left.index - right.index);
+}
+
+function compactHeadingPath(headingPath: string[]): string[] {
+  // Heading arrays can be sparse when a document starts at h2 or h3. Compacting
+  // keeps section keys readable without changing the visible heading order.
+  return headingPath.filter(Boolean);
 }
 
 function isInsideAnyRange(index: number, ranges: Array<{ start: number; end: number }>): boolean {
